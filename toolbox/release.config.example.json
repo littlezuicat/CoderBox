@@ -1,0 +1,6 @@
+{
+  "ssh_target": "zuicat@服务器地址或 ssh 配置里的别名",
+  "ssh_port": 22,
+  "ssh_key": "C:\\Users\\zuicat\\.ssh\\id_ed25519",
+  "remote_script": "/home/zuicat/toolbox-release/publish.sh"
+}

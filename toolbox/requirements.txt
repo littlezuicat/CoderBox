@@ -1,0 +1,11 @@
+pywebview==6.2.1
+pythonnet
+pywin32
+pywinpty
+paramiko
+requests
+cryptography
+Pillow
+pillow-heif
+python-pptx
+fonttools

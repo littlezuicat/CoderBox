@@ -1,0 +1,23 @@
+import os, subprocess, sys, tempfile, time
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from api import Api
+a = Api(); ev = []
+a._emit_hook = lambda t, d: ev.append((t, d))
+d = tempfile.mkdtemp()
+open(d + "/汇报.pptx", "wb").write(b"PK" + os.urandom(500))
+subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=1", "-pix_fmt", "yuv420p", d + "/a.mp4"], check=True)
+print("info:", a.app_info()["version"], a.ppt_detect(), a.ff_status())
+fi = a.file_info([d + "/汇报.pptx", d + "/a.mp4", d + "/x.txt"], "ppt"); print("ppt files:", [f["name"] for f in fi])
+fm = a.file_info([d], "media"); print("media files:", [(f["name"], f["kind"]) for f in fm])
+print("start:", a.ppt_start([f["path"] for f in fi], {"width": 1920, "jpeg": False}))
+t0 = time.time()
+while a.busy_text() and time.time() - t0 < 30: time.sleep(0.1)
+print("ppt events:", [e[0] + ":" + str((e[1] or {}).get("state", "")) for e in ev if e[0].startswith("ppt:f") or e[0] == "ppt:done"])
+ev.clear()
+print("convert start:", a.convert_start([{"path": d + "/a.mp4", "kind": "video", "target": "webm"}]))
+t0 = time.time()
+while a.busy_text() and time.time() - t0 < 60: time.sleep(0.1)
+print("cv events:", [(e[0], (e[1] or {}).get("state")) for e in ev if e[0] == "cv:file"])
+print("targets:", len(a.convert_targets()["video"]))
+print("probe:", a.share_probe())
+print("lookup bad:", a.share_lookup("zzzzzz"))

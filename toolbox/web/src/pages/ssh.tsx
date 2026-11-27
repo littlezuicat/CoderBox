@@ -675,24 +675,30 @@ function TermPane({ alias, active, onResult, slot, onEmpty, tabsSlot }: { alias:
       </Box>
     )
   }
-  const strip = (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: tabsSlot ? 0 : 0.8, overflowX: 'auto', flexShrink: 1, minWidth: 0 }}>
-        {list.map((k) => (
-          <Box key={k} onClick={() => setCur(k)} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, pl: 1.3, pr: 0.4, py: 0.3, borderRadius: 1.5, cursor: 'pointer', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: k === cur ? 700 : 400,
-            bgcolor: k === cur ? 'action.selected' : 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}>
-            会话 {k}
-            <IconButton size="small" aria-label="关闭会话" sx={{ p: 0.2 }} onClick={(e) => { e.stopPropagation(); close(k) }}><CloseRounded sx={{ fontSize: 14 }} /></IconButton>
-          </Box>
-        ))}
-        <Tooltip title={list.length >= MAX_SESSIONS ? `最多 ${MAX_SESSIONS} 个会话` : '新建会话（再开一个命令行）'}><span><IconButton size="small" disabled={list.length >= MAX_SESSIONS} onClick={add}><AddRounded fontSize="small" /></IconButton></span></Tooltip>
-      </Box>
+  // 新布局：“+”和“关闭当前会话”放在面板标题行右侧（portal），会话列表是终端右边的一列小图标（像 VS Code 的终端标签栏）
+  const actions = (
+    <>
+      <Tooltip title="关闭当前会话"><IconButton size="small" onClick={() => close(cur)}><DeleteOutline fontSize="small" /></IconButton></Tooltip>
+      {addBtn}
+    </>
   )
   return (
-    <Box sx={{ display: active ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {!tabsSlot && strip}
-      {tabsSlot && active && createPortal(strip, tabsSlot)}
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+    <Box sx={{ display: active ? 'flex' : 'none', height: '100%', minHeight: 0 }}>
+      {tabsSlot && active && createPortal(actions, tabsSlot)}
+      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
         {list.map((k) => <TermSession key={k} alias={alias} visible={active && k === cur} onResult={onResult} />)}
+      </Box>
+      <Box sx={{ flex: '0 0 34px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.3, pt: 0.6, overflowY: 'auto', borderLeft: 1, borderColor: 'divider' }}>
+        {!tabsSlot && actions}
+        {list.map((k) => (
+          <Tooltip key={k} title={`会话 ${k}`} placement="left">
+            <Box onClick={() => setCur(k)} onAuxClick={(e) => { if (e.button === 1) close(k) }}
+              sx={{ width: 28, height: 28, flexShrink: 0, borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: k === cur ? 'primary.main' : 'text.secondary',
+                bgcolor: k === cur ? 'action.selected' : 'transparent', '&:hover': { bgcolor: k === cur ? 'action.selected' : 'action.hover' } }}>
+              <TerminalOutlined sx={{ fontSize: 18 }} />
+            </Box>
+          </Tooltip>
+        ))}
       </Box>
     </Box>
   )

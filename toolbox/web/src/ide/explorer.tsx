@@ -317,11 +317,14 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
     for (const d of new Set([dest, ...groups.keys()])) if (d === dest || dirsRef.current[d]) await refresh(d)
     setOpen((o) => new Set(o).add(dest))
   }
+  // 没选中任何东西（在空白处右键）时，复制的是打开的这个文件夹本身
   const copyPath = (rel: boolean) => {
-    if (!items.length) return
-    navigator.clipboard?.writeText(items.map((i) => (rel ? i.path.slice(root.length).replace(/^\//, '') || i.name : i.path)).join('\n'))
+    const ps = items.length ? items.map((i) => i.path) : [root]
+    navigator.clipboard?.writeText(ps.map((p) => (rel ? p.slice(root.length).replace(/^\//, '') || (p === root ? '.' : baseOf(p)) : p)).join('\n'))
     setInfo(rel ? '已复制相对路径' : '已复制路径')
   }
+  const termDir = single ? (single.dir ? single.path : parentOf(single.path)) : items.length ? '' : root      // “在此打开终端”打开哪个目录
+  const refreshAll = () => open.forEach((p) => refresh(p))
   // 删除：100MB 以内悄悄移进服务器的垃圾目录；超过的弹窗确认后永久删除
   const doDelete = async () => {
     if (!items.length) return
@@ -430,7 +433,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
         </Box>
       )}
 
-      <Menu open={!!menu && hasMenu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined} slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 250 } } }} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
+      <Menu open={!!menu && hasMenu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined} transitionDuration={{ enter: 60, exit: 0 }} slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 250 } } }} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
         {item('新建文件…', '', () => startCreate('file'))}
         {item('新建文件夹…', '', () => startCreate('dir'))}
         <Divider />
@@ -442,10 +445,13 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
         {(sameParent || (single && !single.dir && ARC.test(single.name))) && <Divider />}
         {sameParent && item('压缩为 ZIP', '', doArchive)}
         {single && !single.dir && ARC.test(single.name) && item('解压到同名文件夹', '', doExtract)}
-        {items.length > 0 && <Divider />}
-        {items.length > 0 && item('复制路径', 'Shift+Alt+C', () => copyPath(false))}
-        {items.length > 0 && item('复制相对路径', 'Ctrl+K Ctrl+Shift+C', () => copyPath(true))}
-        {items.length > 0 && <Divider />}
+        <Divider />
+        {!items.length && item('刷新', '', refreshAll)}
+        {!!termDir && item('在此打开终端', '', () => api.open_terminal(alias, termDir))}
+        {(!items.length || !!termDir) && <Divider />}
+        {item('复制路径', 'Shift+Alt+C', () => copyPath(false))}
+        {item('复制相对路径', 'Ctrl+K Ctrl+Shift+C', () => copyPath(true))}
+        <Divider />
         {undos.length > 0 && item(`撤销：${undos[undos.length - 1].label}`, 'Ctrl+Z', doUndo)}
         {single && item('重命名…', 'F2', startRename)}
         {items.length > 0 && item('删除', 'Del', doDelete, { color: 'error.main' })}

@@ -3,7 +3,7 @@ import { alpha, createTheme, Shadows } from '@mui/material'
 
 export const defaultTheme = {
   primary_color: '#007AFF', secondary_color: '#FC9B76', primary_text: '#000000', secondary_text: '#3C3C4399',
-  info_color: '#007AFF', error_color: '#FF3B30', warning_color: '#FF9500', success_color: '#06943D', background_color: '#F3F5F9',
+  info_color: '#007AFF', error_color: '#FF3B30', warning_color: '#FF9500', success_color: '#06943D', background_color: '#EBEEF3',
   font_family: `-apple-system, BlinkMacSystemFont,"Microsoft YaHei UI", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif`,
 }
 export const defaultDarkTheme = {

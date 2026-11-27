@@ -1504,6 +1504,15 @@ class Api:
                     break
         if not code:
             return {"ok": False, "error": "没找到 VS Code。请先安装 VS Code（并装上 Remote - SSH 扩展），或把 code 命令加进 PATH。"}
+        # 告诉 Remote-SSH 这台主机是什么系统，省得它每次问“选择远程主机的系统”（写进 VS Code 用户设置 remote.SSH.remotePlatform）
+        try:
+            from majing.core import vscset
+            uname = sshhosts.detect_os(sshhosts.exec_client(alias))
+            plat = "windows" if uname == "Windows" else "macOS" if uname == "Darwin" else "linux"
+            if not vscset.set_platform(alias, plat):
+                logging.getLogger("majing.vscode").info("没改 VS Code 设置（settings.json 结构看不懂）")
+        except Exception as e:                                # noqa: BLE001  探测/写设置失败不影响打开，最多它自己再问一次
+            logging.getLogger("majing.vscode").info("设置 remotePlatform 失败：%s", e)
         p = (path or "").strip()
         if not p:
             r = sshhosts.fs_list(alias, "")

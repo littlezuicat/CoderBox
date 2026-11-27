@@ -87,3 +87,16 @@ $b64 = 'b64:' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Notes)
 ssh @sshArgs $cfg.ssh_target "bash $($cfg.remote_script) $args2 --notes $b64"
 if ($LASTEXITCODE) { throw '服务器发布失败（线上没有改动）' }
 "完成：$ver 已发布（$(if ($needExe) { '含整包' } else { '仅负载包' })），工具箱会自动更新。"
+# 发布成功后把这次的改动（含版本号）提交进 git（开源仓库：每次改动都要有提交；密钥/构建产物都在 .gitignore 里）
+if (Get-Command git -ErrorAction SilentlyContinue) {
+  $top = (git -C $PSScriptRoot rev-parse --show-toplevel 2>$null)
+  if ($top) {
+    git -C $top add -A 2>$null
+    git -C $top diff --cached --quiet
+    if ($LASTEXITCODE) {
+      $msg = "发布 ${ver}: " + $(if ($Notes) { $Notes } else { '更新' }) + "`n`nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+      git -C $top commit -q -m $msg
+      "已提交 git：发布 $ver"
+    }
+  }
+}

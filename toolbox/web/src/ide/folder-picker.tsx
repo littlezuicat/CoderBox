@@ -61,7 +61,7 @@ export default function FolderPicker({ alias, open, initial, onClose, onPick }: 
       <Typography sx={{ textAlign: 'center', fontSize: 13, color: 'text.secondary', pt: 1, pb: 0.8 }}>打开文件夹（{alias}）</Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.2, pb: 1 }}>
         <InputBase autoFocus inputRef={input} value={text} onChange={(e) => { setText(e.target.value); setErr('') }} onKeyDown={onKey} spellCheck={false}
-          sx={{ flex: 1, px: 1, height: 32, fontSize: 14, borderRadius: 1, border: 1, borderColor: err ? 'error.main' : 'primary.main', fontFamily: 'Consolas, "Cascadia Mono", monospace' }} />
+          sx={{ flex: 1, px: 1, height: 32, fontSize: 13.5, letterSpacing: 0, borderRadius: 1, border: 1, borderColor: err ? 'error.main' : 'primary.main', '& input': { letterSpacing: 0, fontFamily: 'inherit', padding: 0 } }} />
         <Button variant="contained" size="small" onClick={() => confirm()} sx={{ ...rounded, height: 32, minWidth: 56 }}>确定</Button>
       </Box>
       {err && <Typography sx={{ px: 2, pb: 0.8, fontSize: 12, color: 'error.main' }}>{err}</Typography>}
@@ -70,7 +70,7 @@ export default function FolderPicker({ alias, open, initial, onClose, onPick }: 
         {all === null && <Typography sx={{ px: 2, py: 1, fontSize: 12.5, color: 'text.secondary' }}>读不了这个目录，可以直接输完整路径再点确定。</Typography>}
         {shown.map((n, i) => (
           <Box key={n} data-fp-cur={i === cur ? '1' : '0'} onMouseMove={() => setCur(i)} onClick={() => complete(n)}
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.9, px: 2, height: 28, fontSize: 13.5, cursor: 'pointer', bgcolor: (th) => (i === cur ? alpha(th.palette.primary.main, 0.22) : 'transparent') }}>
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.9, px: 2, height: 28, fontSize: 13, letterSpacing: 0, cursor: 'pointer', bgcolor: (th) => (i === cur ? alpha(th.palette.primary.main, 0.22) : 'transparent') }}>
             <FolderRounded sx={{ fontSize: 17, color: 'primary.main' }} />{n}
           </Box>
         ))}

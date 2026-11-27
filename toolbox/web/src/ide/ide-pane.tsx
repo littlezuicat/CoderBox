@@ -4,6 +4,7 @@ import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded'
 import { alpha, Box, CircularProgress, IconButton, Tooltip } from '@mui/material'
 import { lazy, Suspense, useRef, useState } from 'react'
 
+import type { SysInfo } from '../components/sysinfo-bar'
 import Explorer from './explorer'
 import type { OpenReq } from './editor-panel'
 
@@ -23,8 +24,8 @@ function Splitter({ dir, onDrag }: { dir: 'v' | 'h'; onDrag: (d: number) => void
   return <Box onMouseDown={down} sx={{ flex: dir === 'v' ? '0 0 4px' : '0 0 4px', cursor: dir === 'v' ? 'col-resize' : 'row-resize', bgcolor: 'divider', opacity: 0.5, '&:hover': { bgcolor: 'primary.main', opacity: 1 }, transition: 'background-color .15s' }} />
 }
 
-export default function IdePane({ alias, active, dark, renderTerm, onResult }: {
-  alias: string; active: boolean; dark: boolean
+export default function IdePane({ alias, active, dark, info, renderTerm, onResult }: {
+  alias: string; active: boolean; dark: boolean; info?: SysInfo | null
   renderTerm: (visible: boolean) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
 }) {
   const [exW, setExW] = useState(250)
@@ -45,7 +46,7 @@ export default function IdePane({ alias, active, dark, renderTerm, onResult }: {
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ flex: 1, minHeight: 80 }}>
           <Suspense fallback={<Box sx={{ p: 3, display: 'flex', gap: 1, alignItems: 'center', color: 'text.secondary' }}><CircularProgress size={16} />正在加载编辑器…</Box>}>
-            <EditorPanel alias={alias} req={req} visible={active} dark={dark} />
+            <EditorPanel alias={alias} req={req} visible={active} dark={dark} info={info} />
           </Suspense>
         </Box>
         {dockOpen && <Splitter dir="h" onDrag={(d) => setDockH((h) => clamp(h - d, 90, (wrap.current?.clientHeight || 700) - 140))} />}

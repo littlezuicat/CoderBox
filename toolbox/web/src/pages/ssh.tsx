@@ -941,14 +941,16 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                         {c?.st === 'ok' && c.internal && (
                           <Tooltip title="内网直连，速度更快">
                             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, px: 0.7, borderRadius: 1, fontSize: 11, fontWeight: 700, color: 'primary.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
-                              <BoltRounded sx={{ fontSize: 12 }} />内网
+                              <BoltRounded sx={{ fontSize: 13 }} />
                             </Box>
                           </Tooltip>
                         )}
                         {c?.st === 'ok' && c.via === 'key' && h.common_key && (
-                          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.3, px: 0.7, borderRadius: 1, fontSize: 11, fontWeight: 700, color: 'success.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
-                            <VpnKeyOutlined sx={{ fontSize: 11 }} />密钥
-                          </Box>
+                          <Tooltip title="已用通用密钥登录">
+                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', px: 0.7, borderRadius: 1, color: 'success.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
+                              <VpnKeyOutlined sx={{ fontSize: 13 }} />
+                            </Box>
+                          </Tooltip>
                         )}
                       </Box>
                       {ide
@@ -995,15 +997,15 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 {note && <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>· {note}</Typography>}
                 {vscNote[cur.alias] && <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>· {vscNote[cur.alias]}</Typography>}
                 <Box sx={{ flex: 1, minWidth: 8 }} />
-                <SysInfoBar alias={cur.alias} connected={chk[cur.alias]?.st === 'ok'} info={sysInfo} setInfo={setSysInfo} />
+                <SysInfoBar alias={cur.alias} connected={chk[cur.alias]?.st === 'ok'} info={sysInfo} setInfo={setSysInfo} hidden />
                 <Tooltip title="用本机的 VS Code（Remote-SSH）打开这台主机"><span>
-                  <Button size="small" color="inherit" startIcon={<VsCodeIcon />} sx={{ ...rounded, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 'max-content', fontWeight: 600, px: 1.2 }} disabled={chk[cur.alias]?.st === 'checking'} onClick={() => openVscode(cur.alias)}>VS Code</Button>
+                  <Button size="small" color="inherit" startIcon={<VsCodeIcon />} sx={{ ...rounded, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 'max-content', fontWeight: 600, px: 1.2, textTransform: 'none' }} disabled={chk[cur.alias]?.st === 'checking'} onClick={() => openVscode(cur.alias)}>在 VSCode 打开</Button>
                 </span></Tooltip>
                 <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias)}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
               </Box>
               <Box sx={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                 {ideHosts.filter((a) => hosts.some((h) => h.alias === a)).map((a) => (
-                  <IdePane key={a} alias={a} active={!!active && a === sel} dark={dark}
+                  <IdePane key={a} alias={a} active={!!active && a === sel} dark={dark} info={a === sel ? sysInfo : null}
                     renderTerm={(v) => <TermPane alias={a} active={v} onResult={paneResult} />}
                     onResult={(al, ok, conn, e) => paneResult(al, ok, conn, e)} />
                 ))}

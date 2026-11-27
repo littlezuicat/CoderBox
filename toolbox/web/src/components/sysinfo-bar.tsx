@@ -117,6 +117,21 @@ export function statEntries(info: SysInfo | null): { id: string; text: string; t
   return out
 }
 
+// 底栏里的一行纯数字：CPU / 内存 / 硬盘 / 数据卷，不画占用条；悬停看详情（点一行可复制）
+export function StatStrip({ info }: { info: SysInfo | null }) {
+  const es = statEntries(info)
+  if (!es.length) return null
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+      {es.map((e) => (
+        <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.tooltip.split(NL)} />}>
+          <span style={{ whiteSpace: 'nowrap', cursor: 'default' }}>{e.text.replace(/^\$\([a-z-]+\)\s*/, '')}</span>
+        </Tooltip>
+      ))}
+    </Box>
+  )
+}
+
 export default function SysInfoBar({ alias, connected, info, setInfo, hidden }: { alias: string; connected: boolean; info: SysInfo | null; setInfo: (i: SysInfo | null) => void; hidden?: boolean }) {
   const [busy, setBusy] = useState(false)
   const aliasRef = useRef(alias)

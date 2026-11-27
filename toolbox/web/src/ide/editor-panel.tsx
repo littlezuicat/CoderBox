@@ -4,6 +4,7 @@ import { alpha, Box, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
+import { StatStrip, type SysInfo } from '../components/sysinfo-bar'
 import FileIcon from './file-icon'
 import { langOf, monaco } from './monaco'
 
@@ -12,7 +13,7 @@ export type OpenReq = { path: string; n: number } | null
 
 const base = (p: string) => p.split('/').pop() || p
 
-export default function EditorPanel({ alias, req, visible, dark, onStatus }: { alias: string; req: OpenReq; visible: boolean; dark: boolean; onStatus?: (s: string) => void }) {
+export default function EditorPanel({ alias, req, visible, dark, info, onStatus }: { alias: string; req: OpenReq; visible: boolean; dark: boolean; info?: SysInfo | null; onStatus?: (s: string) => void }) {
   const box = useRef<HTMLDivElement>(null)
   const ed = useRef<any>(null)
   const files = useRef<Map<string, F>>(new Map())
@@ -113,6 +114,7 @@ export default function EditorPanel({ alias, req, visible, dark, onStatus }: { a
       <Box sx={{ flex: '0 0 22px', display: 'flex', alignItems: 'center', gap: 2, px: 1.2, fontSize: 11.5, color: 'text.secondary', borderTop: 1, borderColor: 'divider' }}>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg}</span>
         {cur && <><span>{pos}</span><span>{f?.enc}</span><span>{langOf(cur)}</span></>}
+        <StatStrip info={info ?? null} />
       </Box>
     </Box>
   )

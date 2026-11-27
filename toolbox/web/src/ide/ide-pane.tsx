@@ -1,7 +1,7 @@
 // 一台主机的“VS Code 式”工作区：左边资源管理器，右上编辑器（标签页），下面是终端，中间的分隔线都能拖。
 import KeyboardArrowDownRounded from '@mui/icons-material/KeyboardArrowDownRounded'
 import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded'
-import { alpha, Box, CircularProgress, IconButton, Tooltip } from '@mui/material'
+import { Box, CircularProgress, IconButton, Tooltip } from '@mui/material'
 import { lazy, Suspense, useRef, useState } from 'react'
 
 import type { SysInfo } from '../components/sysinfo-bar'
@@ -39,7 +39,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
 
   return (
     <Box ref={wrap} sx={{ position: 'absolute', inset: 0, display: active ? 'flex' : 'none', minHeight: 0 }}>
-      <Box sx={{ flex: `0 0 ${exW}px`, minWidth: 0, borderRight: 0, bgcolor: (th) => alpha(th.palette.text.primary, 0.025) }}>
+      <Box sx={{ flex: `0 0 ${exW}px`, minWidth: 0, borderRight: 0, bgcolor: 'background.paper' }}>
         <Explorer alias={alias} cloudPath={info?.cloudPath} active={active} onOpen={(p) => setReq({ path: p, n: ++n.current })} onResult={(ok, conn, err) => onResult?.(alias, ok, conn, err)} />
       </Box>
       <Splitter dir="v" onDrag={(d) => setExW((w) => clamp(w + d, 160, 520))} />

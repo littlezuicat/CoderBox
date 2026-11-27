@@ -108,7 +108,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Box sx={{ display: 'flex', flex: '0 0 34px', overflowX: 'auto', bgcolor: (th) => alpha(th.palette.text.primary, 0.04), borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', flex: '0 0 34px', overflowX: 'auto', bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider' }}>
         {tabs.map((t) => (
           <Box key={t.path} onClick={() => show(t.path)} onAuxClick={(e) => { if (e.button === 1) close(t.path) }} title={t.path}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.6, pl: 1.4, pr: 0.6, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, borderRight: 1, borderColor: 'divider', flexShrink: 0,

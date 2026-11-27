@@ -3,7 +3,7 @@ import { alpha, createTheme, Shadows } from '@mui/material'
 
 export const defaultTheme = {
   primary_color: '#007AFF', secondary_color: '#FC9B76', primary_text: '#000000', secondary_text: '#3C3C4399',
-  info_color: '#007AFF', error_color: '#FF3B30', warning_color: '#FF9500', success_color: '#06943D', background_color: '#F5F5F5',
+  info_color: '#007AFF', error_color: '#FF3B30', warning_color: '#FF9500', success_color: '#06943D', background_color: '#F3F5F9',
   font_family: `-apple-system, BlinkMacSystemFont,"Microsoft YaHei UI", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif`,
 }
 export const defaultDarkTheme = {
@@ -20,14 +20,14 @@ export function buildTheme(mode: 'light' | 'dark') {
       primary: { main: dt.primary_color }, secondary: { main: dt.secondary_color }, info: { main: dt.info_color },
       error: { main: dt.error_color }, warning: { main: dt.warning_color }, success: { main: dt.success_color },
       text: { primary: dt.primary_text, secondary: dt.secondary_text },
-      background: { paper: dt.background_color, default: dt.background_color },
+      background: { paper: mode === 'light' ? '#FFFFFF' : '#282A36', default: dt.background_color },
     },
     shadows: Array(25).fill('none') as Shadows,
     typography: { fontFamily: dt.font_family, fontSize: 13 },
   })
   const root = document.documentElement
   root.style.setProperty('--divider-color', mode === 'light' ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.06)')
-  root.style.setProperty('--background-color', mode === 'light' ? '#ECECEC' : dt.background_color)
+  root.style.setProperty('--background-color', dt.background_color)
   root.style.setProperty('--selection-color', mode === 'light' ? '#f5f5f5' : '#3E3E3E')
   root.style.setProperty('--scroller-color', mode === 'light' ? '#90939980' : '#555555')
   root.style.setProperty('--primary-main', muiTheme.palette.primary.main)

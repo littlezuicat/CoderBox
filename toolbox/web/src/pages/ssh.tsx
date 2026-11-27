@@ -1009,7 +1009,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
     const addrOf = (h: Host) => target(chk[h.alias]?.st === 'ok' && chk[h.alias].addr ? { ...h, host: chk[h.alias].addr!.host, port: chk[h.alias].addr!.port } : h)
     return (
       <Box sx={{ display: 'flex', height: '100%', minHeight: 0 }}>
-        <Box sx={{ width: 244, flexShrink: 0, minHeight: 0, p: 0.8, display: 'flex', flexDirection: 'column' }}>{hostCard}</Box>
+        <Box sx={{ width: 244, flexShrink: 0, minHeight: 0, p: 0.8, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>{hostCard}</Box>
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', borderLeft: 1, borderColor: 'divider' }}>
           {err && <Alert severity="error" sx={{ mb: 1, borderRadius: 2 }}>{err}</Alert>}
           {!cur ? <Typography color="text.secondary" sx={{ textAlign: 'center', pt: 10 }}>{hosts.length ? '从左边选一台主机开始' : '添加一个主机开始'}</Typography> : (

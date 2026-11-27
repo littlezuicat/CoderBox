@@ -693,7 +693,7 @@ class Api:
 
     def _cap_bg(self):
         """顶栏底色（RGB）：跟随深浅主题；网页弹出对话框时压暗一半，和网页的遮罩（黑色 50%）一致。"""
-        base = (0x2E, 0x30, 0x3D) if getattr(self, "_cap_dark", False) else (0xF5, 0xF5, 0xF5)
+        base = (0x28, 0x2A, 0x36) if getattr(self, "_cap_dark", False) else (0xFF, 0xFF, 0xFF)      # = 主题里 background.paper（顶栏的网页底色）
         return tuple(v // 2 for v in base) if getattr(self, "_cap_dim", False) else base
 
     def _set_form_back(self):
@@ -1007,7 +1007,7 @@ class Api:
 
             def rgb(r, g, b):
                 return r | (g << 8) | (b << 16)
-            bg = rgb(0x2E, 0x30, 0x3D) if dark else rgb(0xF5, 0xF5, 0xF5)
+            bg = rgb(0x28, 0x2A, 0x36) if dark else rgb(0xFF, 0xFF, 0xFF)
             put(20, 1 if dark else 0)                     # 深色标题栏按钮
             put(35, rgb(*self._cap_bg()) if getattr(self, "_nc_on", False) else bg)       # 标题栏底色（弹窗压暗时一起压暗）
             put(36, rgb(255, 255, 255) if dark else rgb(0, 0, 0))   # 标题文字

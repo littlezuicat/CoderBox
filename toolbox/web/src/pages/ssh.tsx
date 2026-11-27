@@ -40,6 +40,7 @@ import { InfoTip, rounded, Row, Segment } from '../components/common'
 import { EnhancedCard } from '../components/enhanced-card'
 import { GpuBars, GpuBoard, GpuMini, useGpu } from '../components/gpu-board'
 import SysInfoBar, { SysInfoBadge, type SysInfo } from '../components/sysinfo-bar'
+import { CUR_DIR } from '../ide/explorer'
 import IdePane from '../ide/ide-pane'
 import VsCodeIcon from '../components/vscode-icon'
 import { groupSessions } from '../components/share-people'
@@ -634,16 +635,18 @@ function TermSession({ alias, visible, onResult }: { alias: string; visible: boo
 }
 
 const MAX_SESSIONS = 8
-function TermPane({ alias, active, onResult, slot }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null }) {
+function TermPane({ alias, active, onResult, slot, onEmpty }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null; onEmpty?: () => void }) {
   const [list, setList] = useState<number[]>([1])
   const [cur, setCur] = useState(1)
   const next = useRef(2)
   const add = () => { if (list.length >= MAX_SESSIONS) return; const k = next.current++; setList((l) => [...l, k]); setCur(k) }
+  // 关掉最后一个会话 = 关掉终端并让上层把终端面板收起；再展开时自动开一个新会话
   const close = (k: number) => {
-    if (list.length < 2) return
     const i = list.indexOf(k), n = list.filter((x) => x !== k)
-    setList(n); if (cur === k) setCur(n[Math.max(0, i - 1)])
+    setList(n); if (cur === k && n.length) setCur(n[Math.max(0, i - 1)])
+    if (!n.length) onEmpty?.()
   }
+  useEffect(() => { if (active && !list.length) { const k = next.current++; setList([k]); setCur(k) } }, [active, list.length])
   const addBtn = <Tooltip title={list.length >= MAX_SESSIONS ? `最多 ${MAX_SESSIONS} 个会话` : '新建会话（再开一个命令行）'}><span><IconButton size="small" disabled={list.length >= MAX_SESSIONS} onClick={add}><AddRounded fontSize="small" /></IconButton></span></Tooltip>
   if (slot !== undefined) {
     // 新布局：“+”放在面板右上角，多个会话缩成右侧一列小图标（只有一个会话时不显示这一列）
@@ -676,10 +679,10 @@ function TermPane({ alias, active, onResult, slot }: { alias: string; active: bo
     <Box sx={{ display: active ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.8, overflowX: 'auto', flexShrink: 0 }}>
         {list.map((k) => (
-          <Box key={k} onClick={() => setCur(k)} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, pl: 1.3, pr: list.length > 1 ? 0.4 : 1.3, py: 0.3, borderRadius: 1.5, cursor: 'pointer', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: k === cur ? 700 : 400,
+          <Box key={k} onClick={() => setCur(k)} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, pl: 1.3, pr: 0.4, py: 0.3, borderRadius: 1.5, cursor: 'pointer', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: k === cur ? 700 : 400,
             bgcolor: k === cur ? 'action.selected' : 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}>
             会话 {k}
-            {list.length > 1 && <IconButton size="small" aria-label="关闭会话" sx={{ p: 0.2 }} onClick={(e) => { e.stopPropagation(); close(k) }}><CloseRounded sx={{ fontSize: 14 }} /></IconButton>}
+            <IconButton size="small" aria-label="关闭会话" sx={{ p: 0.2 }} onClick={(e) => { e.stopPropagation(); close(k) }}><CloseRounded sx={{ fontSize: 14 }} /></IconButton>
           </Box>
         ))}
         <Tooltip title={list.length >= MAX_SESSIONS ? `最多 ${MAX_SESSIONS} 个会话` : '新建会话（再开一个命令行）'}><span><IconButton size="small" disabled={list.length >= MAX_SESSIONS} onClick={add}><AddRounded fontSize="small" /></IconButton></span></Tooltip>
@@ -923,7 +926,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
   const cur = hosts.find((h) => h.alias === sel)
 
   const hostCard = (
-          <Box sx={{ flex: 1, minHeight: 0 }}><EnhancedCard title="主机" icon={<DnsOutlined />} minHeight={120} action={<Box sx={{ display: 'flex' }}>{ide && <><Tooltip title="共享本机 SSH"><IconButton size="small" onClick={() => setShareOpen(true)}><PeopleBadge n={people}><ShareOutlined fontSize="small" color={share.on ? 'success' : 'inherit'} /></PeopleBadge></IconButton></Tooltip><Tooltip title="添加主机"><IconButton size="small" onClick={() => setDlg({ host: null })}><AddRounded fontSize="small" /></IconButton></Tooltip></>}<Tooltip title="重新测试所有主机的连通性"><span><IconButton size="small" disabled={refreshing} onClick={refresh}><RefreshRounded fontSize="small" /></IconButton></span></Tooltip></Box>}>
+          <Box sx={{ flex: 1, minHeight: 0 }}><EnhancedCard title="主机" icon={<DnsOutlined />} minHeight={120} action={<Box sx={{ display: 'flex' }}>{ide && <><Tooltip title="共享本机 SSH"><IconButton size="small" onClick={() => setShareOpen(true)}><PeopleBadge n={people}><ShareOutlined fontSize="small" color={share.on ? 'success' : 'inherit'} /></PeopleBadge></IconButton></Tooltip><Tooltip title="添加主机"><IconButton size="small" onClick={() => setDlg({ host: null })}><AddRounded fontSize="small" /></IconButton></Tooltip></>}<Tooltip title="测试连接"><span><IconButton size="small" disabled={refreshing} onClick={refresh}><RefreshRounded fontSize="small" /></IconButton></span></Tooltip></Box>}>
             {hosts.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>还没有主机</Typography>}
             <Box sx={{ flex: 1, minHeight: 60, overflow: 'auto', mx: -0.5 }}>
               {sorted.map((h) => {
@@ -1001,12 +1004,12 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 <Tooltip title="用本机的 VS Code（Remote-SSH）打开这台主机"><span>
                   <Button size="small" color="inherit" startIcon={<VsCodeIcon />} sx={{ ...rounded, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 'max-content', fontWeight: 600, px: 1.2, textTransform: 'none' }} disabled={chk[cur.alias]?.st === 'checking'} onClick={() => openVscode(cur.alias)}>在 VSCode 打开</Button>
                 </span></Tooltip>
-                <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias)}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
+                <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias, CUR_DIR[cur.alias] || '')}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
               </Box>
               <Box sx={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                 {ideHosts.filter((a) => hosts.some((h) => h.alias === a)).map((a) => (
                   <IdePane key={a} alias={a} active={!!active && a === sel} dark={dark} info={a === sel ? sysInfo : null}
-                    renderTerm={(v) => <TermPane alias={a} active={v} onResult={paneResult} />}
+                    renderTerm={(v, collapse) => <TermPane alias={a} active={v} onResult={paneResult} onEmpty={collapse} />}
                     onResult={(al, ok, conn, e) => paneResult(al, ok, conn, e)} />
                 ))}
               </Box>
@@ -1042,7 +1045,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 </Tabs>
                 {tab !== 2 && <>
                   <Tooltip title={`全部地址（同时尝试，哪个先通先用哪个；排在前面的连通后自动换过去）：${(cur.addrs?.length ? cur.addrs : [{ host: cur.host, port: cur.port }]).map((a) => a.host + (a.port !== 22 ? ':' + a.port : '')).join('  →  ')}`}><Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', mr: 1 }}>{cur.alias} · {target(chk[cur.alias]?.st === 'ok' && chk[cur.alias].addr ? { ...cur, host: chk[cur.alias].addr!.host, port: chk[cur.alias].addr!.port } : cur)}</Typography></Tooltip>
-                  <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias)}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
+                  <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias, CUR_DIR[cur.alias] || '')}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
                 </>}
               </Box>
               <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>

@@ -27,6 +27,7 @@ const groupByDir = (items: Item[]) => { const m = new Map<string, string[]>(); i
 
 type Edit = null | { kind: 'file' | 'dir' | 'rename'; dir: string; old?: string; isDir?: boolean; text: string; err?: string }      // 树里正在行内输入名字的那一行
 type Undo = { label: string; run: () => Promise<any>; refresh: string[] }
+export const CUR_DIR: Record<string, string> = {}      // 每台主机文件树里“当前所在的目录”（选中的文件夹，没选就是打开的根目录），给“在系统终端打开”用
 let CLIP: null | { alias: string; items: Item[]; cut: boolean } = null      // 树里的剪切/复制板（跨主机不通用）
 
 export default function Explorer({ alias, active, cloudPath, onOpen, onResult }: { alias: string; active?: boolean; cloudPath?: string; onOpen: (path: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
@@ -125,6 +126,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
   const single = items.length === 1 ? items[0] : null
   const sameParent = items.length > 1 && items.every((i) => parentOf(i.path) === parentOf(items[0].path))
   const pasteDir = () => (single ? (single.dir ? single.path : parentOf(single.path)) : root)
+  CUR_DIR[alias] = pasteDir() || root
 
   // ---- 上传：按钮，或把文件/文件夹拖进窗口（传到选中的文件夹；没选就传到根目录）
   const upload = async (paths: string[]) => {

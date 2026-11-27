@@ -60,7 +60,11 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
       minimap: { enabled: false }, scrollBeyondLastLine: false, renderWhitespace: 'selection', smoothScrolling: true, padding: { top: 6 },
     })
     ed.current = e
-    e.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveRef.current())
+    // Ctrl+S：不能用 e.addCommand——standalone Monaco 里命令是所有编辑器共用的，开过几台主机就有几个编辑器，
+    // 同一个快捷键会落到别的主机那个编辑器的保存函数上（它没打开文件，直接什么都不做，表现为“保存没反应”）。改成只挂在这个编辑器自己的按键事件上。
+    e.onKeyDown((ev: any) => {
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.keyCode === monaco.KeyCode.KeyS) { ev.preventDefault(); ev.stopPropagation(); saveRef.current() }
+    })
     e.onDidChangeCursorPosition((ev: any) => setPos(`行 ${ev.position.lineNumber}，列 ${ev.position.column}`))
     return () => { e.dispose(); files.current.forEach((f) => f.model.dispose()); files.current.clear() }
   }, [])
@@ -111,8 +115,8 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
           </Box>
         )}
       </Box>
-      <Box sx={{ flex: '0 0 22px', display: 'flex', alignItems: 'center', gap: 2, px: 1.2, fontSize: 11.5, color: 'text.secondary', borderTop: 1, borderColor: 'divider' }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg}</span>
+      <Box sx={{ flex: '0 0 22px', display: 'flex', alignItems: 'center', gap: 2, px: 1.2, fontSize: 11.5, color: 'text.secondary', borderTop: 1, borderColor: 'divider', whiteSpace: 'nowrap', overflow: 'hidden', '& > span': { flexShrink: 0 } }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{msg}</span>
         {cur && <><span>{pos}</span><span>{f?.enc}</span><span>{langOf(cur)}</span></>}
         <StatStrip info={info ?? null} />
       </Box>

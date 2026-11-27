@@ -53,7 +53,7 @@ export default function FolderPicker({ alias, open, initial, onClose, onPick }: 
     // 像 VS Code 的快速选择：背后的页面不压灰、不模糊、不变色（invisible 遮罩，只负责点外面关闭，也不触发顶栏原生按钮压暗）；
     // 弹窗自己是磨砂玻璃（半透明 + 背景模糊）。全局样式里 .MuiDialog-paper 的底色带 !important，所以这里用 && 提高优先级。
     <Dialog open={open} onClose={onClose} slotProps={{
-      paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden',
+      paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden', clipPath: 'inset(0 round 8px)',      // 圆角处会漏出没裁掉的模糊层，用 clip-path 裁一遍
         '&&': { backgroundColor: (th: any) => `${alpha(th.palette.mode === 'dark' ? '#2E303D' : '#ffffff', 0.66)} !important`, backdropFilter: 'blur(22px) saturate(1.4)', WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
           border: '1px solid', borderColor: (th: any) => `${alpha(th.palette.text.primary, 0.16)} !important` } } },
       backdrop: { invisible: true } }}

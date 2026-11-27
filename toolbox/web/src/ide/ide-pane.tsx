@@ -26,7 +26,7 @@ function Splitter({ dir, onDrag }: { dir: 'v' | 'h'; onDrag: (d: number) => void
 
 export default function IdePane({ alias, active, dark, info, renderTerm, onResult }: {
   alias: string; active: boolean; dark: boolean; info?: SysInfo | null
-  renderTerm: (visible: boolean) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
+  renderTerm: (visible: boolean, collapse: () => void) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
 }) {
   const [exW, setExW] = useState(250)
   const [dockH, setDockH] = useState(280)
@@ -57,7 +57,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
             <Tooltip title={dockOpen ? '收起面板' : '展开面板'}><IconButton size="small" onClick={() => setDockOpen((o) => !o)}>{dockOpen ? <KeyboardArrowDownRounded fontSize="small" /> : <KeyboardArrowUpRounded fontSize="small" />}</IconButton></Tooltip>
           </Box>
           <Box sx={{ flex: 1, minHeight: 0, position: 'relative', display: dockOpen ? 'block' : 'none' }}>
-            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible)}</Box>
+            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible, () => setDockOpen(false))}</Box>
           </Box>
         </Box>
       </Box>

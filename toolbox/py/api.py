@@ -1631,15 +1631,26 @@ class Api:
                 return p
         return None
 
-    def open_terminal(self, alias):
+    def open_terminal(self, alias, path=""):
+        """在系统终端里 ssh 到这台主机；给了 path（文件树里当前的目录）就直接 cd 过去（只对 Linux/macOS 主机；Windows 主机的 shell 不确定，不动）。"""
         ssh = self.ssh_exe()
         if not ssh:
             return {"ok": False, "error": "这台电脑没有装 Windows 自带的 OpenSSH 客户端。打开 设置 → 系统 → 可选功能 → 添加功能，搜索“OpenSSH 客户端”安装后再试。"}
         try:
+            cd = ""
+            if path and path.startswith("/"):
+                try:
+                    if sshhosts.detect_os(sshhosts.exec_client(alias)) != "Windows":
+                        cd = "cd '%s' && exec $SHELL -l" % path.replace("'", "'" + chr(92) + "''")
+                except Exception:                              # noqa: BLE001  探测失败就只打开、不 cd
+                    cd = ""
             if sys.platform == "win32":
-                subprocess.Popen('cmd.exe /k ""%s" %s"' % (ssh, alias), creationflags=0x00000010)
+                if cd:
+                    subprocess.Popen('cmd.exe /k ""%s" -t %s "%s""' % (ssh, alias, cd), creationflags=0x00000010)
+                else:
+                    subprocess.Popen('cmd.exe /k ""%s" %s"' % (ssh, alias), creationflags=0x00000010)
             else:
-                subprocess.Popen(["x-terminal-emulator", "-e", ssh, alias])
+                subprocess.Popen(["x-terminal-emulator", "-e", ssh] + (["-t", alias, cd] if cd else [alias]))
             return {"ok": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}

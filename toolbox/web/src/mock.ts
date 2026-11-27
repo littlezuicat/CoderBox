@@ -210,6 +210,7 @@ export const mock: any = {
     names.forEach((x) => { const a = vfsNorm(parent + '/' + x), b = vfsNorm(dest + '/' + x); for (const [k, v] of [...VFS.entries()]) if (k === a || k.startsWith(a + '/')) VFS.set(b + k.slice(a.length), { ...v }) })
     return { ok: true, count: names.length, created: names.map((x) => dest + '/' + x) }
   },
+  ssh_drag: async () => ({ ok: true }),
   ssh_clip_copy: async (_alias: string, items?: any[]) => ({ ok: true, count: items?.length || 0 }),
   ssh_upload: async (alias: string) => { ;(async () => { for (let k = 1; k <= 8; k++) { await sleep(250); emitLocal('ssh:progress', { kind: 'up', sent: k * 4e6, total: 32e6, speed: 16e6, file: 'demo.mp4' }) } emitLocal('ssh:done', { ok: true, kind: 'up', alias, count: 1, secs: 2 }) })(); return { ok: true } },
   ssh_download: async (alias: string, _items?: any) => { ;(async () => { for (let k = 1; k <= 8; k++) { await sleep(250); emitLocal('ssh:progress', { kind: 'down', sent: k * 4e6, total: 32e6, speed: 16e6, file: 'notes.txt' }) } emitLocal('ssh:done', { ok: true, kind: 'down', alias, count: 1, secs: 2, dest: 'C:\\Users\\demo\\Desktop' }) })(); return { ok: true } },

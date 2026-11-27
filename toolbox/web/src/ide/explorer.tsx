@@ -98,6 +98,24 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   }
   useEvent('files:ssh', (paths: string[]) => { if (active) upload(paths) })
 
+  // 按住文件/文件夹往窗口外拖 = 下载（虚拟文件：拖的时候不下载，放进资源管理器/桌面那一刻才从服务器读）
+  const dragging = useRef(false)
+  const startDrag = (e: React.MouseEvent, path: string, ent: Ent) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || dragging.current) return
+    const x0 = e.clientX, y0 = e.clientY
+    const cleanup = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', cleanup) }
+    const move = (m: MouseEvent) => {
+      if (Math.hypot(m.clientX - x0, m.clientY - y0) < 6) return
+      cleanup()
+      const picked = sel.has(path) ? selItems() : [{ path, name: ent.name, dir: ent.dir }]
+      if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path }
+      dragging.current = true
+      setInfo(`正在拖出 ${picked.length} 项，放到资源管理器或桌面里就开始复制…`)
+      api.ssh_drag(alias, picked).then((r: any) => { if (!r?.ok) setInfo(r?.error || '拖出失败') }).finally(() => { dragging.current = false })
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', cleanup)
+  }
+
   const clickRow = (e: React.MouseEvent, path: string, ent: Ent) => {
     box.current?.focus()
     if (e.ctrlKey || e.metaKey) { setSel((s) => { const n = new Set(s); n.has(path) ? n.delete(path) : n.add(path); return n }); anchor.current = path; return }
@@ -242,9 +260,9 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
         {err && <Typography sx={{ m: 1, fontSize: 12.5, color: 'text.secondary' }}>{err}</Typography>}
         {rows.map(({ path, ent, depth }) => (
-          <Box key={path} onClick={(e) => clickRow(e, path, ent)}
+          <Box key={path} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); box.current?.focus(); if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path } setMenu({ x: e.clientX, y: e.clientY }) }}
-            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
+            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
               opacity: CLIP?.cut && CLIP.alias === alias && CLIP.items.some((i) => i.path === path) ? 0.5 : 1 }}>
             <Box sx={{ width: 18, flexShrink: 0, display: 'flex' }}>{ent.dir ? (open.has(path) ? <ExpandMoreRounded sx={{ fontSize: 18 }} /> : <ChevronRightRounded sx={{ fontSize: 18 }} />) : null}</Box>
             {ent.dir ? <FolderRounded sx={{ fontSize: 17, mr: 0.7, color: 'primary.main', flexShrink: 0 }} /> : <FileIcon name={ent.name} dark={dark} />}

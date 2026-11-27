@@ -176,7 +176,7 @@ export const mock: any = {
   },
   ssh_trash: (_a: string, dir: string, n: string[]) => { n.forEach((x) => vfsDel(vfsNorm(dir + '/' + x))); return { ok: true, count: n.length, big: false, pairs: n.map((x) => [dir + '/' + x, '/home/u/.local/share/Trash/files/' + x]) } },
   ssh_rm: (_a: string, dir: string, n: string[]) => { n.forEach((x) => vfsDel(vfsNorm(dir + '/' + x))); return { ok: true, count: n.length } },
-  ssh_sysinfo: async (_a: string) => ({ ok: true, family: 'linux', name: 'Ubuntu 22.04.4 LTS', arch: 'x86_64', cpu: { model: 'AMD EPYC 7763 64-Core Processor', cores: 128, usage: 23 }, mem: { total: 268435456000, used: 98000000000 }, disk: { model: 'Samsung SSD 980 PRO 1TB', total: 1000000000000, used: 420000000000 } }),
+  ssh_sysinfo: async (_a: string) => ({ ok: true, family: 'linux', name: 'Ubuntu 22.04.4 LTS', arch: 'x86_64', container: true, gpus: 2, cloudPath: '/home/demo/projects', cpu: { model: 'AMD EPYC 7763 64-Core Processor', cores: 128, usage: 23 }, mem: { total: 268435456000, used: 98000000000 }, disks: [{ kind: 'system', mount: '/', total: 214748364800, used: 70000000000, nominal: true }, { kind: 'mount', mount: '/data0', total: 210000000000, used: 200000000 }, { kind: 'cloud', mount: '/cloud', total: 1073741824000, used: 457000000000 }] }),
   ssh_read_file: async (_a: string, path: string) => {
     await sleep(150)
     const f = VFS.get(vfsNorm(path))

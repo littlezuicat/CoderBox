@@ -678,9 +678,11 @@ case "$LIM" in ''|max|*[!0-9]*) LIM=$TOT;; esac
 [ "$LIM" -gt "$TOT" ] 2>/dev/null && LIM=$TOT
 USE=$(cat $MEMUSE 2>/dev/null); INA=$(awk -v k=$INACT '$1==k{print $2}' $MEMSTAT 2>/dev/null)
 echo "MEM=$LIM $(awk -v u="${USE:-0}" -v i="${INA:-0}" 'BEGIN{x=u-i; if(x<0)x=0; printf "%.0f", x}')"
-echo "DU=$(du -sxB1 --exclude=/cloud --exclude=/data0 --exclude=/public --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | tail -1 | awk '{print $1}')"
+echo "DU=$(du -sxB1 --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | tail -1 | awk '{print $1}')"
+echo "CONT=$( { [ "$(stat -f -c %T / 2>/dev/null)" = overlayfs ] || [ -e /.dockerenv ] || [ -e /run/.containerenv ]; } && echo 1 || echo 0)"
+echo "GPUS=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')"
 echo "RO=$(awk '$4 ~ /^ro(,|$)/ {print $2}' /proc/mounts 2>/dev/null | paste -sd, -)"
-echo "VOLS=$(df -PB1 -T 2>/dev/null | awk 'NR>1 && $2 ~ /^(ext[234]|xfs|btrfs|zfs|ceph|nfs|nfs4|cifs|smbfs|fuse)/ && $7 !~ /^\/(etc|usr|proc|sys|dev|run|boot|snap)(\/|$)/ {print $1, $7, $3, $4, $2}' | while read src mnt tot used typ; do case "$src" in /dev/*) n=$(basename "$src"); d=$(readlink -f /sys/class/block/$n 2>/dev/null); [ -f "$d/partition" ] && d=$(dirname "$d"); r=$(cat "$d/queue/rotational" 2>/dev/null); if [ "$r" = 0 ]; then m=SSD; elif [ "$r" = 1 ]; then m=HDD; else m=; fi;; *) m=NET;; esac; printf '%s|%s|%s|%s|%s;' "$mnt" "$tot" "$used" "$typ" "$m"; done)"
+echo "VOLS=$(df -PB1 -T 2>/dev/null | awk 'NR>1 && $2 ~ /^(ext[234]|xfs|btrfs|zfs|ceph|nfs|nfs4|cifs|smbfs|fuse)/ && $7 !~ /^\/(etc|usr|proc|sys|dev|run|boot|snap)(\/|$)/ {print $1, $7, $3, $4, $2}' | while read src mnt tot used typ; do printf '%s|%s|%s|%s|%s;' "$mnt" "$tot" "$used" "$typ" "$src"; done)"
 """
 
 _SYS_WIN = r"""
@@ -691,7 +693,9 @@ $d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $dm = (Get-Partition -DriveLetter C -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue).FriendlyName
 [pscustomobject]@{ os = $o.Caption; cpu = $c.Name; cores = $c.NumberOfLogicalProcessors; cpuUse = $c.LoadPercentage;
   memTotal = [int64]$o.TotalVisibleMemorySize * 1024; memFree = [int64]$o.FreePhysicalMemory * 1024;
-  diskTotal = [int64]$d.Size; diskFree = [int64]$d.FreeSpace; disk = $dm } | ConvertTo-Json -Compress
+  diskTotal = [int64]$d.Size; diskFree = [int64]$d.FreeSpace; disk = $dm;
+  sysDrive = $env:SystemDrive;
+  drives = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { [pscustomobject]@{ id = $_.DeviceID; size = [int64]$_.Size; free = [int64]$_.FreeSpace } }) } | ConvertTo-Json -Compress -Depth 4
 """
 
 
@@ -702,7 +706,8 @@ def _num_or(s, default=0):
         return default
 
 
-CONTAINER_DISK_BYTES = 200 * 1024 ** 3      # 每台容器的实例盘规格
+CONTAINER_DISK_BYTES = 200 * 1024 ** 3      # 容器没有显卡时的实例盘规格
+CONTAINER_GPU_DISK_BYTES = 100 * 1024 ** 3  # 容器每张显卡配的实例盘（读不到真实额度时按这个算）
 
 
 def _fnum(s, default=0.0):
@@ -726,10 +731,19 @@ def sysinfo(alias):
                 return {"ok": False, "error": (err or "没读到系统信息").strip()[:200]}
             mt, mf = int(j.get("memTotal") or 0), int(j.get("memFree") or 0)
             dt, df_ = int(j.get("diskTotal") or 0), int(j.get("diskFree") or 0)
-            return {"ok": True, "family": "windows", "name": j.get("os") or "Windows",
+            sysd = (j.get("sysDrive") or "C:").upper()
+            drives = j.get("drives") or []
+            if isinstance(drives, dict):
+                drives = [drives]
+            disks = [{"kind": "system" if str(d.get("id", "")).upper() == sysd else "mount", "mount": d.get("id", ""), "total": int(d.get("size") or 0),
+                      "used": max(0, int(d.get("size") or 0) - int(d.get("free") or 0))} for d in drives if int(d.get("size") or 0) > 0]
+            if not disks:
+                disks = [{"kind": "system", "mount": sysd, "total": dt, "used": max(0, dt - df_)}]
+            disks.sort(key=lambda x: (x["kind"] != "system", x["mount"]))
+            return {"ok": True, "family": "windows", "name": j.get("os") or "Windows", "container": False, "gpus": 0,
                     "cpu": {"model": j.get("cpu") or "", "cores": int(j.get("cores") or 0), "usage": int(j.get("cpuUse") or 0)},
                     "mem": {"total": mt, "used": max(0, mt - mf)},
-                    "disk": {"model": (j.get("disk") or "").strip(), "total": dt, "used": max(0, dt - df_)}}
+                    "disks": disks}
         code, out, err = _run(c, "sh -c " + shlex.quote(_SYS_LINUX), 25)
         kv = {}
         for ln in out.splitlines():
@@ -739,22 +753,40 @@ def sysinfo(alias):
         if not kv:
             return {"ok": False, "error": (err or "没读到系统信息").strip()[:200]}
         mem_t, mem_u = (kv.get("MEM") or "0 0").split()[:2] if kv.get("MEM") else ("0", "0")
-        # 容器的实例盘：每台 200 GB（云平台给的规格，容器里读不到）；已用 = 根目录统计（排除网络盘和只读卷）
-        disk_t = CONTAINER_DISK_BYTES
-        disk_u = _num_or(kv.get("DU"))
-        name = kv.get("NAME") or "Linux"
-        # 只要容器里能用的卷：只读挂载（比如 /public）不要；根目录（overlay）是宿主机的盘，也不要
+        in_container = kv.get("CONT") == "1"
+        gpus = _num_or(kv.get("GPUS"))
         ro = set(filter(None, (kv.get("RO") or "").split(",")))
-        vols = []
+        disks, seen = [], set()
         for item in (kv.get("VOLS") or "").split(";"):
             p = item.split("|")
-            if len(p) >= 4 and p[0] and p[0] not in ro:
-                vols.append({"mount": p[0], "total": _num_or(p[1]), "used": _num_or(p[2]), "type": p[3], "media": p[4] if len(p) > 4 else ""})
-        return {"ok": True, "family": "linux", "name": name, "arch": kv.get("ARCH", ""),
+            if len(p) < 5 or not p[0] or p[0] in ro:                # 只读的（比如 /public 公共盘）不算
+                continue
+            mnt, tot, used, typ, src = p[0], _num_or(p[1]), _num_or(p[2]), p[3], p[4]
+            if tot <= 0 or (src, tot) in seen:                      # 同一个设备被挂了多次（bind mount）只算一次
+                continue
+            seen.add((src, tot))
+            if typ.startswith("ceph") or mnt.rstrip("/") == "/cloud":
+                kind = "cloud"
+            elif mnt == "/":
+                kind = "system"
+            else:
+                kind = "mount"
+            disks.append({"kind": kind, "mount": mnt, "total": tot, "used": min(used, tot)})
+        if in_container:
+            # 容器的系统盘：平台给的额度在容器里读不到（df 报的是宿主机整块盘），按每张显卡 100 GB 算，没有显卡就按 200 GB
+            nominal = CONTAINER_GPU_DISK_BYTES * gpus if gpus > 0 else CONTAINER_DISK_BYTES
+            disks = [d for d in disks if d["kind"] != "system"]
+            disks.insert(0, {"kind": "system", "mount": "/", "total": nominal, "used": min(_num_or(kv.get("DU")), nominal), "nominal": True})
+        elif not any(d["kind"] == "system" for d in disks):
+            r = _num_or(kv.get("DU"))
+            disks.insert(0, {"kind": "system", "mount": "/", "total": max(r, 0), "used": max(r, 0)})
+        order = {"system": 0, "mount": 1, "cloud": 2}
+        disks.sort(key=lambda d: (order[d["kind"]], d["mount"]))
+        cloud = next((d["mount"] for d in disks if d["kind"] == "cloud"), "")
+        return {"ok": True, "family": "linux", "name": kv.get("NAME") or "Linux", "arch": kv.get("ARCH", ""), "container": in_container, "gpus": gpus,
                 "cpu": {"model": kv.get("CPU", ""), "cores": _num_or(kv.get("CORES")), "usage": _fnum(kv.get("CPUUSE"))},
                 "mem": {"total": _num_or(mem_t), "used": _num_or(mem_u)},
-                "disk": {"model": "", "total": disk_t, "used": min(disk_u, disk_t), "avail": max(0, disk_t - disk_u)},
-                "volumes": vols}
+                "disks": disks, "cloudPath": cloud}
     except Exception as e:                                # noqa: BLE001
         drop_exec(alias)
         return {"ok": False, "error": str(e)[:200]}

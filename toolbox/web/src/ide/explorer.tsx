@@ -29,7 +29,7 @@ type Edit = null | { kind: 'file' | 'dir' | 'rename'; dir: string; old?: string;
 type Undo = { label: string; run: () => Promise<any>; refresh: string[] }
 let CLIP: null | { alias: string; items: Item[]; cut: boolean } = null      // 树里的剪切/复制板（跨主机不通用）
 
-export default function Explorer({ alias, active, onOpen, onResult }: { alias: string; active?: boolean; onOpen: (path: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
+export default function Explorer({ alias, active, cloudPath, onOpen, onResult }: { alias: string; active?: boolean; cloudPath?: string; onOpen: (path: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
   const dark = useTheme().palette.mode === 'dark'
   const [root, setRoot] = useState('')
   const [dirs, setDirs] = useState<Record<string, Ent[]>>({})
@@ -64,6 +64,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   useEffect(() => {
     setUndos([]); setEdit(null); setSel(new Set()); setDirs({})
     const saved = getSetting('ide.folder.' + alias, '') as string
+    defaultRoot.current = !saved; switched.current = false
     const go = async () => {
       let p = saved ? await load(saved) : null
       if (!p) p = await load('')
@@ -71,6 +72,13 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     }
     go()
   }, [alias])
+  // 识别到云盘就默认打开云盘目录（只在没手动选过文件夹、也还没动过树的时候；不写进设置，以后换了云盘位置会跟着变）
+  const defaultRoot = useRef(false), switched = useRef(false)
+  useEffect(() => {
+    if (!cloudPath || !defaultRoot.current || switched.current || !root || root === cloudPath || sel.size || edit) return
+    switched.current = true
+    load(cloudPath).then((q) => { if (q) { setRoot(q); setOpen(new Set([q])) } })
+  }, [cloudPath, root])
   const openFolder = (p: string) => {
     putSetting('ide.folder.' + alias, p)
     setPicker(false); setUndos([]); setSel(new Set()); setEdit(null); setDirs({})

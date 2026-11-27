@@ -40,7 +40,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
   return (
     <Box ref={wrap} sx={{ position: 'absolute', inset: 0, display: active ? 'flex' : 'none', minHeight: 0 }}>
       <Box sx={{ flex: `0 0 ${exW}px`, minWidth: 0, borderRight: 0, bgcolor: (th) => alpha(th.palette.text.primary, 0.025) }}>
-        <Explorer alias={alias} active={active} onOpen={(p) => setReq({ path: p, n: ++n.current })} onResult={(ok, conn, err) => onResult?.(alias, ok, conn, err)} />
+        <Explorer alias={alias} cloudPath={info?.cloudPath} active={active} onOpen={(p) => setReq({ path: p, n: ++n.current })} onResult={(ok, conn, err) => onResult?.(alias, ok, conn, err)} />
       </Box>
       <Splitter dir="v" onDrag={(d) => setExW((w) => clamp(w + d, 160, 520))} />
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>

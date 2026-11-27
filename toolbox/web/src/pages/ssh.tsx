@@ -570,7 +570,7 @@ const TERM_THEME = {
   },
 }
 
-function TermSession({ alias, visible, onResult }: { alias: string; visible: boolean; onResult?: PaneResult }) {
+function TermSession({ alias, visible, onResult, initCd }: { alias: string; visible: boolean; onResult?: PaneResult; initCd?: string }) {
   const box = useRef<HTMLDivElement>(null)
   const S = useRef<{ term?: Terminal; fit?: FitAddon; id: string | null; buf: { id: string; data: string }[] }>({ id: null, buf: [] })
   const [status, setStatus] = useState<'connecting' | 'on' | 'closed'>('connecting')
@@ -587,6 +587,7 @@ function TermSession({ alias, visible, onResult }: { alias: string; visible: boo
     if (!r.ok) { setStatus('closed'); setMsg(r.error || '连接失败'); return }
     s.id = r.id; setStatus('on')
     s.buf.filter((x) => x.id === r.id).forEach((x) => term.write(x.data)); s.buf = []
+    if (initCd && !/^\/[A-Za-z]:/.test(initCd)) { const dir = initCd; api.term_input(r.id, "cd '" + dir.replace(/'/g, "'\\''") + "' && clear\n") }      // 从文件树“在此打开终端”来的：进到那个目录（Windows 主机暂不处理）
     term.focus()
   }
   useEffect(() => {
@@ -635,10 +636,18 @@ function TermSession({ alias, visible, onResult }: { alias: string; visible: boo
 }
 
 const MAX_SESSIONS = 8
-function TermPane({ alias, active, onResult, slot, onEmpty, tabsSlot }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null; onEmpty?: () => void; tabsSlot?: HTMLElement | null }) {
+function TermPane({ alias, active, onResult, slot, onEmpty, tabsSlot, req }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null; onEmpty?: () => void; tabsSlot?: HTMLElement | null; req?: { dir: string; n: number } | null }) {
   const [list, setList] = useState<number[]>([1])
   const [cur, setCur] = useState(1)
   const next = useRef(2)
+  const cds = useRef<Map<number, string>>(new Map())
+  const lastReq = useRef(0)
+  useEffect(() => {
+    if (!req || req.n === lastReq.current) return
+    lastReq.current = req.n
+    if (list.length >= MAX_SESSIONS) return
+    const k = next.current++; cds.current.set(k, req.dir); setList((l) => [...l, k]); setCur(k)
+  }, [req])
   const add = () => { if (list.length >= MAX_SESSIONS) return; const k = next.current++; setList((l) => [...l, k]); setCur(k) }
   // 关掉最后一个会话 = 关掉终端并让上层把终端面板收起；再展开时自动开一个新会话
   const close = (k: number) => {
@@ -686,9 +695,9 @@ function TermPane({ alias, active, onResult, slot, onEmpty, tabsSlot }: { alias:
     <Box sx={{ display: active ? 'flex' : 'none', height: '100%', minHeight: 0 }}>
       {tabsSlot && active && createPortal(actions, tabsSlot)}
       <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
-        {list.map((k) => <TermSession key={k} alias={alias} visible={active && k === cur} onResult={onResult} />)}
+        {list.map((k) => <TermSession key={k} alias={alias} visible={active && k === cur} onResult={onResult} initCd={cds.current.get(k)} />)}
       </Box>
-      <Box sx={{ flex: '0 0 34px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.3, pt: 0.6, overflowY: 'auto', borderLeft: 1, borderColor: 'divider' }}>
+      <Box sx={{ flex: '0 0 34px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.3, pt: 0.6, overflowY: 'auto' }}>
         {!tabsSlot && actions}
         {list.map((k) => (
           <Tooltip key={k} title={`会话 ${k}`} placement="left">
@@ -1039,7 +1048,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
               <Box sx={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                 {ideHosts.filter((a) => hosts.some((h) => h.alias === a)).map((a) => (
                   <IdePane key={a} alias={a} active={!!active && a === sel} dark={dark} info={a === sel ? sysInfo : null}
-                    renderTerm={(v, collapse, tabsSlot) => <TermPane alias={a} active={v} onResult={paneResult} onEmpty={collapse} tabsSlot={tabsSlot} />}
+                    renderTerm={(v, collapse, tabsSlot, req) => <TermPane alias={a} active={v} onResult={paneResult} onEmpty={collapse} tabsSlot={tabsSlot} req={req} />}
                     onResult={(al, ok, conn, e) => paneResult(al, ok, conn, e)} />
                 ))}
               </Box>

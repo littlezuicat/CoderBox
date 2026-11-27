@@ -26,13 +26,15 @@ function Splitter({ dir, onDrag }: { dir: 'v' | 'h'; onDrag: (d: number) => void
 
 export default function IdePane({ alias, active, dark, info, renderTerm, onResult }: {
   alias: string; active: boolean; dark: boolean; info?: SysInfo | null
-  renderTerm: (visible: boolean, collapse: () => void, tabsSlot: HTMLElement | null) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
+  renderTerm: (visible: boolean, collapse: () => void, tabsSlot: HTMLElement | null, req: { dir: string; n: number } | null) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
 }) {
   const [exW, setExW] = useState(250)
   const [dockH, setDockH] = useState(280)
   const [dockOpen, setDockOpen] = useState(true)
   const [req, setReq] = useState<OpenReq>(null)
   const n = useRef(0)
+  const [termReq, setTermReq] = useState<{ dir: string; n: number } | null>(null)       // 文件树里“在此打开终端”：展开终端面板，新开一个会话并 cd 过去
+  const nt = useRef(0)
   const wrap = useRef<HTMLDivElement>(null)
   const [tabsEl, setTabsEl] = useState<HTMLElement | null>(null)       // 终端会话标签放在面板标题行的右侧
 
@@ -41,7 +43,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
   return (
     <Box ref={wrap} sx={{ position: 'absolute', inset: 0, display: active ? 'flex' : 'none', minHeight: 0 }}>
       <Box sx={{ flex: `0 0 ${exW}px`, minWidth: 0, borderRight: 0, bgcolor: 'background.paper' }}>
-        <Explorer alias={alias} cloudPath={info?.cloudPath} active={active} onOpen={(p) => setReq({ path: p, n: ++n.current })} onResult={(ok, conn, err) => onResult?.(alias, ok, conn, err)} />
+        <Explorer alias={alias} cloudPath={info?.cloudPath} active={active} onOpen={(p) => setReq({ path: p, n: ++n.current })} onTerm={(d) => { setDockOpen(true); setTermReq({ dir: d, n: ++nt.current }) }} onResult={(ok, conn, err) => onResult?.(alias, ok, conn, err)} />
       </Box>
       <Splitter dir="v" onDrag={(d) => setExW((w) => clamp(w + d, 160, 520))} />
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -59,7 +61,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
             <Tooltip title={dockOpen ? '收起面板' : '展开面板'}><IconButton size="small" onClick={() => setDockOpen((o) => !o)}>{dockOpen ? <KeyboardArrowDownRounded fontSize="small" /> : <KeyboardArrowUpRounded fontSize="small" />}</IconButton></Tooltip>
           </Box>
           <Box sx={{ flex: 1, minHeight: 0, position: 'relative', display: dockOpen ? 'block' : 'none' }}>
-            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible, () => setDockOpen(false), tabsEl)}</Box>
+            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible, () => setDockOpen(false), tabsEl, termReq)}</Box>
           </Box>
         </Box>
       </Box>

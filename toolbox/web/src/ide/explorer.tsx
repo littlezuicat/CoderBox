@@ -30,7 +30,7 @@ type Undo = { label: string; run: () => Promise<any>; refresh: string[] }
 export const CUR_DIR: Record<string, string> = {}      // 每台主机文件树里“当前所在的目录”（选中的文件夹，没选就是打开的根目录），给“在系统终端打开”用
 let CLIP: null | { alias: string; items: Item[]; cut: boolean } = null      // 树里的剪切/复制板（跨主机不通用）
 
-export default function Explorer({ alias, active, cloudPath, onOpen, onResult }: { alias: string; active?: boolean; cloudPath?: string; onOpen: (path: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
+export default function Explorer({ alias, active, cloudPath, onOpen, onTerm, onResult }: { alias: string; active?: boolean; cloudPath?: string; onOpen: (path: string) => void; onTerm?: (dir: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
   const dark = useTheme().palette.mode === 'dark'
   const [root, setRoot] = useState('')
   const [dirs, setDirs] = useState<Record<string, Ent[]>>({})
@@ -433,7 +433,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
         </Box>
       )}
 
-      <Menu open={!!menu && hasMenu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined} transitionDuration={{ enter: 60, exit: 0 }} slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 250 } } }} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
+      <Menu open={!!menu && hasMenu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined} transitionDuration={{ enter: 110, exit: 40 }} slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 250 } } }} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
         {item('新建文件…', '', () => startCreate('file'))}
         {item('新建文件夹…', '', () => startCreate('dir'))}
         <Divider />
@@ -447,7 +447,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
         {single && !single.dir && ARC.test(single.name) && item('解压到同名文件夹', '', doExtract)}
         <Divider />
         {!items.length && item('刷新', '', refreshAll)}
-        {!!termDir && item('在此打开终端', '', () => api.open_terminal(alias, termDir))}
+        {!!termDir && item('在此打开终端', '', () => onTerm?.(termDir))}
         {(!items.length || !!termDir) && <Divider />}
         {item('复制路径', 'Shift+Alt+C', () => copyPath(false))}
         {item('复制相对路径', 'Ctrl+K Ctrl+Shift+C', () => copyPath(true))}

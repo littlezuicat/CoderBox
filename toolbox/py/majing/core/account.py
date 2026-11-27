@@ -12,7 +12,7 @@ import sys
 
 import requests
 
-BASE = "https://code.zuicat.cn"
+BASE = os.environ.get("MAJING_ACCOUNT_BASE") or "https://code.zuicat.cn"       # 环境变量只给本地测试用
 COOKIE = "coderland_session"
 
 
@@ -127,13 +127,18 @@ def status(ua):
     return {"bound": True, **p}
 
 
+def token():
+    """本机保存的登录凭证（没绑定返回 None）。只给同步模块带在请求头里用，别写日志。"""
+    return _load()
+
+
 def start(ua):
     """发起“跳转授权”：{ok, device_code, user_code, url}。浏览器里打开 url，用户在码境点“授权”。"""
     import socket
     try:
-        name = "克劳德工具箱 · " + socket.gethostname()
+        name = "码境工具箱 · " + socket.gethostname()
     except Exception:
-        name = "克劳德工具箱"
+        name = "码境工具箱"
     try:
         r = requests.post(BASE + "/api/auth/device/start", json={"name": name}, timeout=10, headers=_headers(ua))
     except requests.RequestException:

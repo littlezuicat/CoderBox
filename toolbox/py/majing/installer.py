@@ -191,8 +191,9 @@ def install(opts, emit):
 
 
 def launch(exe):
+    from majing.core import updater
     subprocess.Popen([exe, "--installed"], cwd=os.path.dirname(exe), close_fds=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     creationflags=NOWIN if sys.platform == "win32" else 0)
+                     creationflags=NOWIN if sys.platform == "win32" else 0, env=updater.fresh_env())
 
 
 def _spawn_detached(cmd):
@@ -246,6 +247,9 @@ def uninstall(opts, emit):
             for base in (os.environ.get("APPDATA"), os.environ.get("LOCALAPPDATA")):
                 if base:
                     shutil.rmtree(os.path.join(base, "MajingToolbox"), ignore_errors=True)
+        local = os.environ.get("LOCALAPPDATA")
+        if local:                                         # 负载包（程序本体的一部分）总是删；ffmpeg 等下载的组件跟着“删除数据”走
+            shutil.rmtree(os.path.join(local, "MajingToolbox", "payload"), ignore_errors=True)
         emit(85, "删除程序文件…")
         if sys.platform == "win32":      # 自己正在运行，删不了自己：交给一个延迟几秒的独立命令，等本进程退出后再删
             # 注意 cmd 里 if 后面的 & 属于 if 的分支：if 条件不成立时 & 后面的 ping 会被一起跳过（循环就没有等待了），所以 if 要用括号圈住

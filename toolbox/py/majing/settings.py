@@ -27,8 +27,10 @@ class Settings:
     def set(self, k, v):
         self.data[k] = v
         try:
-            with open(_path(), "w", encoding="utf-8") as f:
+            tmp = _path() + ".tmp"                           # 先写临时文件再替换：中途被杀也不会留下写了一半的设置
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, _path())
         except Exception:
             pass
 

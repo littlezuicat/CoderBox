@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>码境密码</title>
+<style>
+  :root{color-scheme:light dark;--bg:#fff;--fg:#222;--mut:#777;--line:#e3e3e8;--pri:#2f5bd8;--hov:#eef2ff}
+  @media (prefers-color-scheme:dark){:root{--bg:#1f2024;--fg:#e8e8ea;--mut:#9a9aa2;--line:#33343a;--hov:#2a2d3a}}
+  body{margin:0;width:340px;background:var(--bg);color:var(--fg);font:13px/1.5 'Segoe UI','Microsoft YaHei',sans-serif}
+  header{display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:14px;border-bottom:1px solid var(--line);font-weight:600}
+  header img{width:20px;height:20px}
+  header small{margin-left:auto;font-weight:400;color:var(--mut)}
+  #q{box-sizing:border-box;width:calc(100% - 24px);margin:8px 12px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font:inherit}
+  .sec{padding:2px 12px;color:var(--mut);font-size:12px}
+  .it{padding:8px 12px;cursor:pointer;display:flex;flex-direction:column}
+  .it:hover{background:var(--hov)} .it b{font-weight:600} .it small{color:var(--mut)}
+  .msg{padding:14px 12px;color:var(--mut);line-height:1.8} .err{color:#d33}
+  #list{max-height:300px;overflow:auto;padding-bottom:6px}
+  #autorow{display:block;padding:8px 12px;border-top:1px solid var(--line);color:var(--mut);font-size:12px;cursor:pointer}
+</style></head>
+<body>
+<header><img src="icons/32.png" alt=""><span>码境密码</span><small id="st"></small></header>
+<input id="q" placeholder="搜索全部密码（点选会仍然询问）" autocomplete="off">
+<div id="list"></div>
+<label id="autorow"><input type="checkbox" id="auto"> 打开页面时自动填充（只在账号唯一或上次选过时）</label>
+<script src="popup.js"></script>
+</body></html>

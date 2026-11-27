@@ -21,6 +21,7 @@ import time
 
 import paramiko
 
+from majing.core import sharetunnel
 from majing.settings import settings
 
 NOWIN = 0x08000000 if sys.platform == "win32" else 0
@@ -254,15 +255,21 @@ class _Iface(paramiko.ServerInterface):
         return True
 
     def check_channel_shell_request(self, channel):
+        self.srv._tag(self.sid, "终端")
         threading.Thread(target=self.srv._shell, args=(channel, self.size.get(channel.chanid, (80, 24))), daemon=True).start()
         return True
 
     def check_channel_exec_request(self, channel, command):
+        self.srv._tag(self.sid, "命令")
         threading.Thread(target=self.srv._exec, args=(channel, command.decode("utf-8", "replace")), daemon=True).start()
         return True
 
     def check_channel_env_request(self, channel, name, value):
         return False
+
+    def check_channel_subsystem_request(self, channel, name):
+        self.srv._tag(self.sid, "SFTP" if name == "sftp" else name)
+        return super().check_channel_subsystem_request(channel, name)
 
 
 class ShareServer:
@@ -285,6 +292,9 @@ class ShareServer:
         self._stop = threading.Event()
         self._hostkey = None
         self._sid = 0
+        self._pend_kinds = {}
+        self._pend_who = {}
+        self.tunnel = sharetunnel.ShareTunnel(lambda: self._changed())      # 公网入口（反向隧道到 code.zuicat.cn）；没有隧道密钥的电脑上不启用
 
     # ------------------------------------------------------------ 状态
     @property
@@ -294,11 +304,20 @@ class ShareServer:
     def info(self):
         with self._lock:
             return {
-                "on": self.on, "port": self.port, "user": self.user, "password": self.password, "ips": local_ips() if self.on else [],
+                "on": self.on, "port": self.port, "user": self.user, "password": self.password,
+                "public": self.tunnel.public if self.on else None, "tunnel_error": self.tunnel.error if self.on else "", "tunnel_running": self.tunnel.running if self.on else False,
                 "expires": self.expires, "started": self.started,
-                "sessions": [{"sid": k, "ip": v["ip"], "since": v["since"]} for k, v in self.sessions.items()],
+                "sessions": [{"sid": k, "ip": v["ip"], "since": v["since"], "kinds": list(v.get("kinds", {})), "who": v.get("who", "")} for k, v in self.sessions.items()],
                 "log": list(self.log[-8:]),
             }
+
+    def _tag(self, sid, kind):
+        """记下这条连接在干什么（终端/命令/SFTP），共享窗口里显示：一个客户端（VS Code、Termius…）会同时开好几条连接。"""
+        with self._lock:
+            v = self.sessions.get(sid)
+            d = v.setdefault("kinds", {}) if v is not None else self._pend_kinds.setdefault(sid, {})        # 会话还没登记（认证刚过、请求就来了）先暂存
+            d[kind] = d.get(kind, 0) + 1
+        self._changed()
 
     def _changed(self):
         try:
@@ -315,6 +334,9 @@ class ShareServer:
         with self._lock:
             if self.on:
                 return {"ok": False, "error": "已经开启了。"}
+            bad = sharetunnel.precheck()                    # 没绑定码境账号 / 码境用户名不是英文：不允许共享
+            if bad:
+                return {"ok": False, "error": bad}
             try:
                 self._hostkey = self._hostkey or _host_key()
             except Exception as e:
@@ -326,7 +348,7 @@ class ShareServer:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     if sys.platform != "win32":
                         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    s.bind(("0.0.0.0", port))
+                    s.bind(("127.0.0.1", port))                # 只在本机回环上监听：别人只能经公网中转进来，局域网里不能直连
                     s.listen(20)
                     sock = s
                     break
@@ -346,6 +368,7 @@ class ShareServer:
             self._note("已开启，端口 %d" % self.port)
             threading.Thread(target=self._accept, args=(sock,), daemon=True).start()
             threading.Thread(target=self._timer, daemon=True).start()
+            self.tunnel.start(self.port)
         self._changed()
         return {"ok": True, **self.info()}
 
@@ -359,6 +382,7 @@ class ShareServer:
             except OSError:
                 pass
             self.sock = None
+            self.tunnel.stop()
             for v in list(self.sessions.values()):
                 try:
                     v["transport"].close()
@@ -368,6 +392,24 @@ class ShareServer:
             self.password = ""
             self._note(why)
         self._changed()
+
+    def reset_password(self):
+        """重置密码：换一个新的随机密码，旧密码作废，所有正在连着的人立刻断开（要用新密码重新连）。"""
+        with self._lock:
+            if not self.on:
+                return {"ok": False, "error": "还没有开启共享。"}
+            self.password = "".join(secrets.choice(_ALPHA) for _ in range(16))
+            self._fails.clear()
+            n = len(self.sessions)
+            for v in list(self.sessions.values()):
+                try:
+                    v["transport"].close()
+                except Exception:
+                    pass
+            self.sessions.clear()
+            self._note("已重置密码，断开了所有连接" if n else "已重置密码")
+        self._changed()
+        return {"ok": True, **self.info()}
 
     def kick(self, sid):
         v = self.sessions.get(sid)
@@ -429,7 +471,7 @@ class ShareServer:
             t.close()
             return
         with self._lock:
-            self.sessions[sid] = {"ip": ip, "since": time.time(), "transport": t}
+            self.sessions[sid] = {"ip": ip, "since": time.time(), "transport": t, "kinds": self._pend_kinds.pop(sid, {}), "who": self._pend_who.pop(sid, "")}
             self._note("%s 已连接" % ip)
         self._changed()
         while t.is_active() and not self._stop.is_set():
@@ -446,9 +488,11 @@ class ShareServer:
             n, until = self._fails.get(ip, (0, 0))
             if until > now:
                 return False
-            good = self.on and hmac.compare_digest(password.encode(), self.password.encode()) and username.lower() == self.user.lower()
+            good = self.on and hmac.compare_digest(password.encode(), self.password.encode()) and (username.lower() == self.user.lower() or (ip == "127.0.0.1" and (username == "relay" or username.startswith("relay+"))))        # 经公网中转来的连接，中转已经按码境用户名分好了设备，用户名固定 relay
             if good:
                 self._fails.pop(ip, None)
+                if username.startswith("relay+"):
+                    self._pend_who[sid] = username[6:][:32]        # 访客自称的码境用户名（中转带过来的，没法核实）
                 return True
             n += 1
             self._fails[ip] = (n, now + self.LOCK_SECS if n >= self.MAX_FAILS else 0)

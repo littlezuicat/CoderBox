@@ -1,0 +1,10 @@
+[Unit]
+Description=每天预取一次最新的 VS Code Server
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

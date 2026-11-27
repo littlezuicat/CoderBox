@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "码境密码",
+  "version": "0.1.0",
+  "description": "用码境工具箱的本机密码库自动填充登录（密码只在你点选或匹配网址时才取出）",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxm8G6vat6JolwzSFLVixhEVBM5qZWslgHHY4G8ypaoFl0aoSFYNJFxEFD+F7q/0t67MhnkIKQaty/Iz4XkvbzmSrVFdkZzXuBY6Guvpo423zRui+nB04iiwGJRxo3AVQshCBC0UIxeCdGMgaZdM3Uy7znBueBBPjHXlLcHFxS9Kzq6REAubC+I31hj/FIRcLdZwIq/QzfyS/nGdC4N2dRTsNp5h0tjx3zsOgHkiW+3pxkgSwF8J44D9vZME0AvBBkID+L1cUHJ2OmcKbWY4cpJXhATyaA7Z4dX6UEcLctlcbU2qSg9x0mh1KlE6K9d0C3P6m0aRFY5tiYFqTiq1zawIDAQAB",
+  "minimum_chrome_version": "110",
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "码境密码",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "fill": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L"
+      },
+      "description": "填充当前页面的登录"
+    }
+  }
+}

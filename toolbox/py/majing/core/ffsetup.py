@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
-"""ffmpeg 放在 %LOCALAPPDATA%\\MajingToolbox\\ffmpeg-8.1；第一次用时从 www.zuicat.cn 下载并校验 sha256。"""
+"""ffmpeg 放在 %LOCALAPPDATA%\\MajingToolbox\\ffmpeg-8.1；进入工具箱时自动从 www.zuicat.cn 下载并校验 sha256。
+下载的是 .tar.xz（x86 BCJ + LZMA2 极限压缩，tools/pack_ffmpeg.py 生成），比原来的 zip 小四成，用标准库 tarfile/lzma 解压。"""
 import hashlib
 import os
 import shutil
 import sys
-import zipfile
+import tarfile
 
 import requests
 
 from .. import APP_VERSION
 
-URL = "https://www.zuicat.cn/toolbox/ffmpeg-8.1-win64.zip"
-SHA256 = "567fe0c9f8bae55b6a6678e8c196d9938bcb7af71e821367f5222399a8ff1a32"
-SIZE = 79496402
+URL = os.environ.get("MAJING_FFMPEG_URL") or "https://www.zuicat.cn/toolbox/ffmpeg-8.1-win64.tar.xz"      # 测试时可用环境变量指到本地服务器
+SHA256 = "d2e5906655a89ea3b57a8ca2d64ed13f82e11e6e5b12e7caaea59065abba487a"
+SIZE = 47004496
 
 
 def install_dir():
@@ -36,7 +37,7 @@ def find():
 def download(progress=lambda got, total: None, cancelled=lambda: False):
     d = install_dir()
     os.makedirs(os.path.dirname(d), exist_ok=True)
-    part = d + ".zip.part"
+    part = d + ".tar.xz.part"
     sha = hashlib.sha256()
     got = 0
     with requests.get(URL, stream=True, timeout=30, headers={"User-Agent": "MajingToolbox/" + APP_VERSION}) as r:
@@ -55,8 +56,13 @@ def download(progress=lambda got, total: None, cancelled=lambda: False):
         raise IOError("下载的文件校验不通过（可能被网络篡改或没下完整），请重试")
     tmp = d + ".tmp"
     shutil.rmtree(tmp, ignore_errors=True)
-    with zipfile.ZipFile(part) as z:
-        z.extractall(tmp)
+    os.makedirs(tmp, exist_ok=True)
+    with tarfile.open(part, "r:xz") as t:
+        for m in t.getmembers():
+            if not m.isfile() or m.name != os.path.basename(m.name):          # 只收平铺的普通文件，路径里有目录的一律拒绝
+                raise IOError("下载的压缩包里有不认识的内容，已放弃")
+            with t.extractfile(m) as fi, open(os.path.join(tmp, m.name), "wb") as fo:
+                shutil.copyfileobj(fi, fo, 1 << 20)
     shutil.rmtree(d, ignore_errors=True)
     os.replace(tmp, d)
     os.remove(part)

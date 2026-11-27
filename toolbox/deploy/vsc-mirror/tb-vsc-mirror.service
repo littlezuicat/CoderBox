@@ -1,0 +1,12 @@
+[Unit]
+Description=VS Code Server 镜像（预取最新稳定版，供码境工具箱下载）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=zuicat
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/bin/python3 /home/zuicat/toolbox-release/vsc-mirror.py latest
+TimeoutStartSec=8h

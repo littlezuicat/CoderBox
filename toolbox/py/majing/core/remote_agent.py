@@ -78,6 +78,7 @@ class RemoteAgent:
         return True
 
     def start(self):
+        self._stopping = False
         if self._mutex is None and not self._acquire_owner():
             self.other_instance = True
             return
@@ -86,7 +87,11 @@ class RemoteAgent:
                 self.exe = locate_exe()
             if not self.exe or not os.path.exists(self.exe):
                 raise RuntimeError("这个版本没有内置远程连接组件")
-            self.proc = subprocess.Popen([self.exe, "ipc"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env = dict(os.environ)
+            base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
+            os.makedirs(os.path.join(base, "MajingToolbox"), exist_ok=True)
+            env.setdefault("MAJING_REMOTE_CONFIG", os.path.join(base, "MajingToolbox", "remote.json"))      # 设备 ID 和密钥存在这里，重启后设备 ID 不变
+            self.proc = subprocess.Popen([self.exe, "ipc"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                                          cwd=os.path.dirname(os.path.abspath(self.exe)), creationflags=CREATE_NO_WINDOW)
             p = self.proc
             threading.Thread(target=self._read_loop, args=(p,), daemon=True).start()

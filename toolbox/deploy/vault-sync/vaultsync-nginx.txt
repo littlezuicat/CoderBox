@@ -1,0 +1,20 @@
+# ① /etc/nginx/conf.d/vaultsync-limits.conf（http 级别的限流区）
+limit_req_zone $binary_remote_addr zone=vaultsync:2m rate=60r/m;
+
+# ② 追加到 /etc/nginx/snippets/toolbox.conf 的 `location ^~ /toolbox/ {` 之前
+#    （精确匹配 = 优先于下面的 ^~ 前缀匹配；注意这个 location 不要开请求头/请求体日志：里面有登录凭证）
+# 密码保险库同步（后端 vaultsync.service，127.0.0.1:8795，只存密文；deploy/vault-sync）
+location = /toolbox/api/vault {
+    limit_req zone=vaultsync burst=20 nodelay;
+    limit_req_status 429;
+    client_max_body_size 8m;
+    client_body_timeout 20s;
+    access_log off;
+    proxy_pass http://127.0.0.1:8795/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 30s;
+}

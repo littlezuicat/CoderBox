@@ -1,0 +1,35 @@
+# /etc/systemd/system/vaultsync.service —— 码境工具箱“密码保险库同步”后端（www.zuicat.cn/toolbox/api/vault）
+# 只存密文；身份用 CoderLand 账号（向本机 127.0.0.1:8787 的 /api/auth/me 核对登录凭证）。
+# 参照 qragg.service 的加固方式：一次性用户 + 只读系统 + 只允许回环网络。
+[Unit]
+Description=Toolbox password vault sync (ciphertext only)
+After=network.target coderland.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=vaultsync
+StateDirectoryMode=0700
+Environment=PYTHONUNBUFFERED=1 LISTEN_HOST=127.0.0.1 LISTEN_PORT=8795 DATA_DIR=/var/lib/vaultsync AUTH_ME_URL=http://127.0.0.1:8787/api/auth/me
+ExecStart=/usr/bin/python3 /opt/vaultsync/vault_sync_server.py
+Restart=always
+RestartSec=3
+Nice=5
+MemoryMax=256M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8
+
+[Install]
+WantedBy=multi-user.target

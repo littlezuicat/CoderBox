@@ -89,7 +89,8 @@ export function statEntries(info: SysInfo | null): Entry[] {
   out.push({ id: 'mem', icon: <DeveloperBoardRounded sx={ic} />, label: '内存', text: `${gib(mu)}/${gib(mt)} GB ${fmtPct(pct(mu, mt))}%`, lines: [] })
   const ds = info.disks || []
   const local = ds.filter((d) => d.kind !== 'cloud'), cloud = ds.filter((d) => d.kind === 'cloud')
-  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', d.mount, `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`]
+  const short = (p: string) => (p.length > 26 ? p.slice(0, 9) + '…' + p.slice(-14) : p)      // 路径太长就中间省略
+  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', short(d.mount), `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`]
   if (local.length) {
     const lt = local.reduce((a, d) => a + d.total, 0), lu = local.reduce((a, d) => a + d.used, 0)
     out.push({ id: 'disk', icon: <StorageRounded sx={ic} />, label: '磁盘', text: `${gib(lu)}/${gib(lt)} GB ${fmtPct(pct(lu, lt))}%`, lines: info.container ? ['实例销毁后自动回收'] : [], table: local.map(row) })
@@ -109,7 +110,7 @@ export function StatStrip({ info }: { info: SysInfo | null }) {
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.2, flexShrink: 0 }}>
       {es.map((e) => {
         const body = <span style={{ whiteSpace: 'nowrap', cursor: 'default' }}>{e.icon}{e.label} {e.text}</span>
-        return e.lines.length || e.table?.length ? <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.lines} table={e.table} />}>{body}</Tooltip> : <span key={e.id}>{body}</span>
+        return e.lines.length || e.table?.length ? <Tooltip key={e.id} placement="top-end" slotProps={{ tooltip: { sx: { maxWidth: 'none' } } }} title={<CopyLines lines={e.lines} table={e.table} />}>{body}</Tooltip> : <span key={e.id}>{body}</span>
       })}
     </Box>
   )

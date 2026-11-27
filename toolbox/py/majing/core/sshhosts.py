@@ -678,8 +678,10 @@ case "$LIM" in ''|max|*[!0-9]*) LIM=$TOT;; esac
 [ "$LIM" -gt "$TOT" ] 2>/dev/null && LIM=$TOT
 USE=$(cat $MEMUSE 2>/dev/null); INA=$(awk -v k=$INACT '$1==k{print $2}' $MEMSTAT 2>/dev/null)
 echo "MEM=$LIM $(awk -v u="${USE:-0}" -v i="${INA:-0}" 'BEGIN{x=u-i; if(x<0)x=0; printf "%.0f", x}')"
-echo "DU=$(du -sxB1 --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | tail -1 | awk '{print $1}')"
-echo "CONT=$( { [ "$(stat -f -c %T / 2>/dev/null)" = overlayfs ] || [ -e /.dockerenv ] || [ -e /run/.containerenv ]; } && echo 1 || echo 0)"
+CONT=0; { [ "$(stat -f -c %T / 2>/dev/null)" = overlayfs ] || [ -e /.dockerenv ] || [ -e /run/.containerenv ]; } && CONT=1
+echo "CONT=$CONT"
+# 只有容器才要自己量根目录用了多少（df 报的是宿主机整块盘）；真机直接用 df，遍历整个根目录要二十多秒
+[ "$CONT" = 1 ] && echo "DU=$(timeout 25 du -sxB1 --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | tail -1 | awk '{print $1}')"
 echo "GPUS=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')"
 echo "RO=$(awk '$4 ~ /^ro(,|$)/ {print $2}' /proc/mounts 2>/dev/null | paste -sd, -)"
 echo "VOLS=$(df -PB1 -T 2>/dev/null | awk 'NR>1 && $2 ~ /^(ext[234]|xfs|btrfs|zfs|ceph|nfs|nfs4|cifs|smbfs|fuse)/ && $7 !~ /^\/(etc|usr|proc|sys|dev|run|boot|snap)(\/|$)/ {print $1, $7, $3, $4, $2}' | while read src mnt tot used typ; do printf '%s|%s|%s|%s|%s;' "$mnt" "$tot" "$used" "$typ" "$src"; done)"

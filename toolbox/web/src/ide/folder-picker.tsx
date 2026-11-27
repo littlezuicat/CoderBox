@@ -50,10 +50,13 @@ export default function FolderPicker({ alias, open, initial, onClose, onPick }: 
   useEffect(() => { document.querySelector('[data-fp-cur="1"]')?.scrollIntoView({ block: 'nearest' }) }, [cur, shown.length])
 
   return (
-    // 背后不压灰，改成磨砂玻璃（invisible 遮罩 = 不触发顶栏原生按钮的压暗，页面本身也没变暗）
+    // 像 VS Code 的快速选择：背后的页面不压灰、不模糊、不变色（invisible 遮罩，只负责点外面关闭，也不触发顶栏原生按钮压暗）；
+    // 弹窗自己是磨砂玻璃（半透明 + 背景模糊）。全局样式里 .MuiDialog-paper 的底色带 !important，所以这里用 && 提高优先级。
     <Dialog open={open} onClose={onClose} slotProps={{
-      paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden' } },
-      backdrop: { invisible: true, sx: { backdropFilter: 'blur(12px) saturate(1.1)', WebkitBackdropFilter: 'blur(12px) saturate(1.1)', bgcolor: (th: any) => alpha(th.palette.background.default, 0.18) } } }}
+      paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden',
+        '&&': { backgroundColor: (th: any) => `${alpha(th.palette.mode === 'dark' ? '#2E303D' : '#ffffff', 0.66)} !important`, backdropFilter: 'blur(22px) saturate(1.4)', WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+          border: '1px solid', borderColor: (th: any) => `${alpha(th.palette.text.primary, 0.16)} !important` } } },
+      backdrop: { invisible: true } }}
       sx={{ '& .MuiDialog-container': { alignItems: 'flex-start', justifyContent: 'center' } }}>
       <Typography sx={{ textAlign: 'center', fontSize: 13, color: 'text.secondary', pt: 1, pb: 0.8 }}>打开文件夹（{alias}）</Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.2, pb: 1 }}>

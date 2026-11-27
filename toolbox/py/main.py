@@ -97,6 +97,7 @@ def main():
     log.setup()
     api = Api()
     api.mode = mode
+    api._web_index = web_index
     log.wrap_api(api)
     if mode == "app":
         w, h = settings.get("win_size", [1180, 780])

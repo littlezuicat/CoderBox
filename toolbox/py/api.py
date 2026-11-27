@@ -9,7 +9,7 @@ import threading
 import time
 
 from majing import APP_VERSION, history, installer
-from majing.core import account, clashfix, devsec, ffsetup, gpumon, media, ppt_engine, sshhosts, sshserver, updater, vscserver, vsync
+from majing.core import account, clashfix, devsec, ffsetup, gpumon, litrans, media, ppt_engine, sshhosts, sshserver, updater, vscserver, vsync
 from majing.core import vault as vault_mod
 from majing.core.vault import VaultError, vault
 from majing.core.remote_agent import RemoteAgent
@@ -103,6 +103,12 @@ class Api:
         self._agent = RemoteAgent()
         self._agent.on_event = lambda ev: self._emit("remote:event", ev)
         self._update_pending = None
+        self._web_index = None            # main.py 填：界面入口文件（划词弹窗要另开一个窗口）
+        self._lit_pop = None              # 文献翻译的划词弹窗（第二个窗口，藏着备用）
+        self._lit_hwnd = 0
+        self._lit_pop_lock = threading.Lock()
+        self._lit_rid = 100
+        self._lit_hk = litrans.Hotkey(self._lit_on_press)
         self._upd_lock = threading.Lock()                 # 同一时间只允许一轮更新（检查+下载）
         self._acct_code = None
         self._made = set()                # 这个会话里转换生成的输出文件（重新转换时只允许删这些）
@@ -141,6 +147,7 @@ class Api:
         self._thread(self._update_loop)
         self._thread(self._vsync_loop)
         gpumon.monitor.start(self._emit)             # GPU 采样只在界面要求时做（gpu_sample_now），这里只记下事件推送函数
+        self._lit_apply_hotkey()                     # 文献翻译的划词热键（设置里开了才注册）
 
     def _vsync_loop(self):
         """开了密码同步就每 3 分钟同步一次（浏览器扩展保存的新密码、别的电脑的修改都靠它带过去/带回来）。"""
@@ -160,11 +167,139 @@ class Api:
             pass
         self._share.stop("工具箱已退出")
         self._agent.stop()
+        try:
+            self._lit_hk.stop()
+            if self._lit_pop is not None:                # 弹窗窗口不销毁的话 webview.start 不会返回，进程退不掉
+                self._lit_pop.destroy()
+        except Exception:                                # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------ 通用
     def app_info(self):
-        return {"version": APP_VERSION, "platform": sys.platform, "settings": settings.data, "mode": self.mode,
+        return {"version": APP_VERSION, "platform": sys.platform, "settings": {k: v for k, v in settings.data.items() if k != "lit_key"}, "mode": self.mode,
                 "installed": installer.is_installed_run(), "remote": {}}
+
+    # ------------------------------------------------------------------ 文献翻译（移植自 FlashTrans 的在线 API 路径，见 core/litrans.py）
+    def lit_get(self):
+        return {"cfg": litrans.get_cfg(), "has_key": litrans.has_key(), "langs": [[a, b] for a, b, _ in litrans.LANGS],
+                "hotkey_error": self._lit_hk.error}
+
+    def lit_set(self, d):
+        d = dict(d or {})
+        if d.get("api_key") is not None:                 # 只有填了才改密钥（界面不回显密钥）
+            litrans.set_key(d["api_key"])
+        d.pop("api_key", None)
+        litrans.set_cfg(d)
+        self._lit_apply_hotkey()
+        litrans.translator.warmup()
+        return self.lit_get()
+
+    def _lit_apply_hotkey(self):
+        c = litrans.get_cfg()
+        if sys.platform != "win32":
+            return
+        if c["hotkey_on"]:
+            self._lit_hk.start(c["hotkey"])
+            litrans.translator.warmup()
+        else:
+            self._lit_hk.stop()
+            self._lit_hk.error = ""
+
+    def lit_translate(self, rid, text):
+        """工作台里的翻译：结果用 lit:delta / lit:done / lit:error 事件推回来（带 id，新请求会作废旧的）。"""
+        litrans.translator.cancel_all()
+        self._thread(litrans.translator.run, rid, text, lambda typ, d: self._emit("lit:" + typ, d))
+        return True
+
+    def lit_cancel(self, rid):
+        litrans.translator.cancel(rid)
+        return True
+
+    def lit_warmup(self):
+        litrans.translator.warmup()
+        return True
+
+    def lit_test(self):
+        return litrans.translator.test()
+
+    def lit_copy(self, text):
+        return litrans.set_clipboard_text(text or "")
+
+    # ---- 划词弹窗
+    def _lit_popup_win(self):
+        import webview
+        with self._lit_pop_lock:
+            if self._lit_pop is not None:
+                return self._lit_pop
+            dark = settings.get("theme", "light") == "dark"
+            # 弹窗用主窗口同一个本地网页服务的地址，加上 ?lit=popup 让前端只渲染译文（不能先开再改地址：create_window 一调用就开始加载了）
+            base = (getattr(self._window, "real_url", "") or "").split("?")[0]
+            url = base + "?lit=popup" if base.startswith("http") else self._web_index()
+            w = webview.create_window("文献翻译", url, js_api=self, width=440, height=140, frameless=True, on_top=True,
+                                      resizable=False, hidden=True, easy_drag=False, shadow=True, focus=False, text_select=True,
+                                      background_color="#282A36" if dark else "#FFFFFF")
+            loaded = threading.Event()
+            w.events.loaded += lambda *a: loaded.set()
+            loaded.wait(20)
+            self._lit_hwnd = int(w.native.Handle.ToInt64())
+            litrans.round_corners(self._lit_hwnd)
+            litrans.style_popup(self._lit_hwnd)
+            self._lit_pop = w
+            return w
+
+    def _lit_pop_emit(self, typ, data):
+        w = self._lit_pop
+        if w is None:
+            return
+        try:
+            w.evaluate_js("window.__lit && window.__lit(%s, %s)" % (json.dumps(typ), json.dumps(data, ensure_ascii=False)))
+        except Exception:                                # noqa: BLE001
+            pass
+
+    def _lit_on_press(self, mod_vks):
+        text = litrans.grab_selection(mod_vks)
+        self._lit_show(text)
+
+    def _lit_show(self, text):
+        """在鼠标旁边弹出译文窗口（不抢焦点），并开始翻译。"""
+        w = self._lit_popup_win()
+        litrans.translator.cancel_all()
+        sc = litrans.window_scale(self._lit_hwnd)
+        pw, ph = int(440 * sc), int(130 * sc)
+        x, y, (l, t, r, b) = litrans.cursor_and_work()
+        px = max(l + 8, min(x + 14, r - pw - 8))
+        py = y + int(20 * sc)
+        if py + ph > b:
+            py = max(t, y - ph - int(14 * sc))
+        litrans.place(self._lit_hwnd, pw, ph, px, py)
+        self._lit_rid += 1
+        rid = self._lit_rid
+        self._lit_pop_emit("start", {"id": rid, "text": text, "stay": litrans.get_cfg()["stay"]})
+        if not (text or "").strip():
+            self._lit_pop_emit("error", {"id": rid, "message": "没有取到选中的文字：先选中文字再按热键。"})
+            return
+        self._thread(litrans.translator.run, rid, text, lambda typ, d: self._lit_pop_emit(typ, d))
+
+    def lit_popup_info(self):
+        return {"theme": settings.get("theme", "light")}
+
+    def lit_popup_resize(self, css_h):
+        hwnd = self._lit_hwnd
+        if not hwnd:
+            return False
+        sc = litrans.window_scale(hwnd)
+        h = int(max(70, min(float(css_h), 560)) * sc)
+        l, t, r, b = litrans.window_rect(hwnd)
+        _, _, (wl, wt, wr, wb) = litrans.cursor_and_work()
+        y = t if t + h <= wb else max(wt, wb - h)         # 译文变长时别超出屏幕下沿
+        litrans.place(hwnd, r - l, h, l, y)
+        return True
+
+    def lit_popup_hide(self):
+        litrans.translator.cancel_all()
+        if self._lit_hwnd:
+            litrans.hide(self._lit_hwnd)
+        return True
 
     # ------------------------------------------------------------------ 安装 / 卸载面板
     def installer_state(self):

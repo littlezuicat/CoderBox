@@ -1,9 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import LitPopup from './pages/lit-popup'
 import './styles/index.scss'
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
+// 划词翻译的弹窗是后端另开的小窗口（地址带 ?lit=popup），只渲染译文，不是整个应用
+const isLitPopup = new URLSearchParams(location.search).get('lit') === 'popup'
+createRoot(document.getElementById('root')!).render(<StrictMode>{isLitPopup ? <LitPopup /> : <App />}</StrictMode>)
 
 // 前端报错也交给后端写日志（源码版：toolbox\logs\debug.log）
 import { api } from './bridge'

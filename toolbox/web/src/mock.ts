@@ -176,6 +176,22 @@ export const mock: any = {
   },
   ssh_trash: (_a: string, dir: string, n: string[]) => { n.forEach((x) => vfsDel(vfsNorm(dir + '/' + x))); return { ok: true, count: n.length, big: false, pairs: n.map((x) => [dir + '/' + x, '/home/u/.local/share/Trash/files/' + x]) } },
   ssh_rm: (_a: string, dir: string, n: string[]) => { n.forEach((x) => vfsDel(vfsNorm(dir + '/' + x))); return { ok: true, count: n.length } },
+  lit_get: async () => ({ cfg: S.lit || { base_url: 'https://api.deepseek.com', model: 'deepseek-flash', target: 'zh', auto_swap: true, domain: '', hotkey_on: false, hotkey: 'F1', stay: 10 }, has_key: !!S.litKey, hotkey_error: '', langs: [['zh', '中文（简体）'], ['zh-Hant', '中文（繁体）'], ['en', '英语'], ['ja', '日语'], ['ko', '韩语'], ['fr', '法语'], ['de', '德语']] }),
+  lit_set: async (d: any) => { const { api_key, ...rest } = d || {}; if (api_key !== undefined) S.litKey = api_key; S.lit = { ...(await mock.lit_get()).cfg, ...rest }; return mock.lit_get() },
+  lit_warmup: async () => true,
+  lit_test: async () => { await sleep(500); return S.litKey ? { ok: true, ms: 312, text: '你好' } : { ok: false, error: '还没填接口地址和密钥，先到“文献”页的设置里填一下。' } },
+  lit_copy: async () => true,
+  lit_cancel: async () => true,
+  lit_translate: async (id: number, text: string) => {
+    ;(async () => {
+      await sleep(250)
+      if (!S.litKey) { emitLocal('lit:error', { id, message: '还没填接口地址和密钥，先到“文献”页的设置里填一下。' }); return }
+      const full = '【模拟译文】' + text
+      for (let i = 0; i < full.length; i += 3) { emitLocal('lit:delta', { id, text: full.slice(i, i + 3) }); await sleep(40) }
+      emitLocal('lit:done', { id, full, cached: false })
+    })()
+    return true
+  },
   ssh_sysinfo: async (_a: string) => ({ ok: true, family: 'linux', name: 'Ubuntu 22.04.4 LTS', arch: 'x86_64', container: true, gpus: 2, cloudPath: '/home/demo/projects', cpu: { model: 'AMD EPYC 7763 64-Core Processor', cores: 128, usage: 23 }, mem: { total: 268435456000, used: 98000000000 }, disks: [{ kind: 'system', mount: '/', total: 214748364800, used: 70000000000, nominal: true }, { kind: 'mount', mount: '/data0', total: 210000000000, used: 200000000 }, { kind: 'cloud', mount: '/cloud', total: 1073741824000, used: 457000000000 }] }),
   ssh_read_file: async (_a: string, path: string) => {
     await sleep(150)

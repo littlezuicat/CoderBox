@@ -137,6 +137,14 @@ elay.py`，README 里有部署步骤，systemd 服务 tb-relay，监听 127.0.0.
 es`，不随程序启动、不进负载包。
 - 本机经 Clash 虚拟网卡时，对任何远端端口 `connect` 都会先成功，“端口开着”的探测结果不可信，要读到真实 banner 才算数。
 
+## 文献翻译（工具页「文献」卡片，2026-11-27）
+- 移植自开源项目 FlashTrans（chai1220，MIT，许可证放在 `web\LICENSE-FlashTrans-MIT`）的**在线 API 路径**：输入即译工作台 + 全局划词热键 + 鼠标旁弹窗。**没移植**本地模型（NLLB/GGUF）、截图 OCR、对话、F2 打字弹窗。用户自己填接口地址/模型/密钥（默认 `api.deepseek.com` / `deepseek-flash`）。
+- 后端 `py\majing\core\litrans.py`：`Translator`（requests.Session 复用连接、DeepSeek 域名带 `thinking:disabled`、SSE 按字节切行再转 UTF-8、LRU 缓存 200 条、失败重试一次、warmup 预热 TLS）；`Hotkey`（独立线程 RegisterHotKey + 消息循环）；`grab_selection`（keybd_event 模拟 Ctrl+C，用 `GetClipboardSequenceNumber` 判断复制完成）；弹窗定位/置顶/不抢焦点的 ctypes 辅助（**用自己的 `ctypes.WinDLL` 句柄**，不和别处的 user32 函数对象互相覆盖 argtypes）。
+- **密钥**：用 `account._protect`（DPAPI）加密后存在设置文件的 `lit_key`，`app_info` 不把它发给前端；前端只知道 `has_key`。别把用户在聊天里贴的密钥写进任何文件。
+- 弹窗是 `api._lit_popup_win` 懒创建的第二个 pywebview 窗口（无边框、置顶、`focus=False`，再补 WS_EX_NOACTIVATE|TOOLWINDOW 和 Win11 圆角），藏着备用；地址 = 主窗口 `real_url` 去掉查询再加 `?lit=popup`，`main.tsx` 看到它只渲染 `pages\lit-popup.tsx`。**不能先建窗再改地址**：`create_window` 在非主线程一调用就开始加载了。退出时 `_shutdown` 要销毁弹窗窗口，不然 `webview.start` 不返回。`_hwnd()` 按标题 `码境工具箱` 找主窗口，弹窗标题叫“文献翻译”，互不干扰。
+- 前端 `pages\literature.tsx`（工作台+设置），`online.tsx` 里第一张卡片切换到它；`mock.ts` 有 `lit_*` 的模拟。
+- 测试：假 SSE 服务（流式、汉字被劈开、缓存、401、密钥不明文落盘）已跑通；真窗口里（临时 APPDATA + CDP + `win_front` 把自己的窗口放前台，再用 keybd_event 发 Ctrl+Alt+F9）验证了：热键触发→弹窗在鼠标旁出现（置顶、不抢焦点、不进任务栏）→流式译文→`lit_popup_hide`。**测热键前必须先让自己的窗口在前台**，否则 Ctrl+C 会落到别的程序。**没验证**：真 DeepSeek 接口、真划词（在浏览器/PDF 阅读器里）、停留秒数自动收起、热键被别的程序占用时的提示、打包版 exe。
+
 ## 状态（2.0.4，2026-11-22 已发布）
 已验证：PPT 真 PowerPoint 导出、格式转换、SSH 管理、安装→运行→卸载、自动更新替换重启、真实资源管理器拖放（框变色、入队正常）、转换历史写入/重启保留、长文件名下布局无横向滚动。
 **没验证**：WPS 引擎、共享本机时有人来连的审批弹窗、SmartScreen 行为、公网访问共享本机（需网关开端口，用户未决定）、码境账号完整授权链路（2026-11-24 起设置页已显示，`SHOW_ACCOUNT`；服务器 device/start 实测可用，网页授权点“授权”这一步还没走过）。

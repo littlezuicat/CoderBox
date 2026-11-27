@@ -271,6 +271,10 @@ class Api:
         py = y + int(20 * sc)
         if py + ph > b:
             py = max(t, y - ph - int(14 * sc))
+        try:                                             # 用窗体自己的 Show()：只调 SetWindowPos 显示的话，藏着创建的 WebView2 不知道自己可见了，整个窗口是空白
+            w.show()
+        except Exception:                                # noqa: BLE001
+            pass
         litrans.place(self._lit_hwnd, pw, ph, px, py)
         self._lit_rid += 1
         rid = self._lit_rid
@@ -297,8 +301,11 @@ class Api:
 
     def lit_popup_hide(self):
         litrans.translator.cancel_all()
-        if self._lit_hwnd:
-            litrans.hide(self._lit_hwnd)
+        if self._lit_pop is not None:
+            try:
+                self._lit_pop.hide()
+            except Exception:                            # noqa: BLE001
+                litrans.hide(self._lit_hwnd)
         return True
 
     # ------------------------------------------------------------------ 安装 / 卸载面板

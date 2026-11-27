@@ -937,9 +937,9 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                     sx={ide
                       ? {      // Clash Verge 节点卡片：白底圆角、没有描边；选中=淡蓝底 + 左边 3px 蓝条；悬停变灰
                           py: 1, pl: 1.1, pr: 1.1, mb: 1, mx: 0.5, borderRadius: 2, cursor: 'pointer', borderLeftWidth: 3, borderLeftStyle: 'solid', borderLeftColor: sel === h.alias ? 'primary.main' : 'transparent',
-                          bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.10 : 0.045) : d ? '#282a36' : '#ffffff' },
+                          bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.16 : 0.12) : d ? '#282a36' : '#ffffff' },
                           transition: 'background-color .15s',
-                          '&:hover': { bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.14 : 0.075) : d ? '#33364a' : '#eeeeee' } },
+                          '&:hover': { bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.2 : 0.16) : d ? '#33364a' : '#eeeeee' } },
                         }
                       : { py: 0.9, px: 0.8, borderRadius: 1.5, cursor: 'pointer', bgcolor: sel === h.alias ? 'action.selected' : 'transparent', '&:hover': { bgcolor: sel === h.alias ? 'action.selected' : 'action.hover' } }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

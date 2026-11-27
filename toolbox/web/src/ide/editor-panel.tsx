@@ -122,7 +122,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
           </Box>
         ))}
       </Box>
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative', bgcolor: (th) => (th.palette.mode === 'light' ? '#ffffff' : 'transparent') }}>
         <div ref={box} style={{ position: 'absolute', inset: 0, visibility: cur ? 'visible' : 'hidden' }} />
         {!cur && (
           <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: 'text.disabled', userSelect: 'none' }}>

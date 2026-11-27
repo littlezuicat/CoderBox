@@ -48,9 +48,14 @@ function writeCache(alias: string, info: SysInfo) {
 }
 
 // 悬停提示：一行一行的文字（不带复制）
-function CopyLines({ lines }: { lines: string[] }) {
+function CopyLines({ lines, table }: { lines: string[]; table?: string[][] }) {
   return (
     <Box sx={{ fontSize: 12, lineHeight: 1.7 }}>
+      {!!table?.length && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'auto auto auto auto', columnGap: 1.6, mb: lines.length ? 0.4 : 0 }}>
+          {table.map((r, i) => r.map((c, j) => <Box key={i + '-' + j} sx={{ whiteSpace: 'pre', textAlign: j >= 2 ? 'right' : 'left', fontVariantNumeric: 'tabular-nums' }}>{c}</Box>))}
+        </Box>
+      )}
       {lines.map((l, i) => <Box key={i} sx={{ whiteSpace: 'pre' }}>{l}</Box>)}
     </Box>
   )
@@ -72,7 +77,7 @@ export function SysInfoBadge({ info, addr }: { info: SysInfo | null; addr: strin
 }
 
 const NL = String.fromCharCode(10)
-type Entry = { id: string; icon: React.ReactNode; label: string; text: string; lines: string[] }
+type Entry = { id: string; icon: React.ReactNode; label: string; text: string; lines: string[]; table?: string[][] }      // table：悬停里按列对齐的行（名称 / 路径 / 用量 / 百分比）
 // 底栏里的几项：CPU / 内存 / 磁盘（系统盘 + 挂载盘） / 云盘。短文字 + 悬停说明
 export function statEntries(info: SysInfo | null): Entry[] {
   if (!info?.ok) return []
@@ -84,16 +89,14 @@ export function statEntries(info: SysInfo | null): Entry[] {
   out.push({ id: 'mem', icon: <DeveloperBoardRounded sx={ic} />, label: '内存', text: `${gib(mu)}/${gib(mt)} GB ${fmtPct(pct(mu, mt))}%`, lines: [] })
   const ds = info.disks || []
   const local = ds.filter((d) => d.kind !== 'cloud'), cloud = ds.filter((d) => d.kind === 'cloud')
-  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', d.kind === 'system' && d.mount === '/' ? '' : d.mount, `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`].filter(Boolean).join('  ')
+  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', d.mount, `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`]
   if (local.length) {
     const lt = local.reduce((a, d) => a + d.total, 0), lu = local.reduce((a, d) => a + d.used, 0)
-    const lines = local.map(row)
-    if (info.container) lines.push('实例销毁后自动回收')
-    out.push({ id: 'disk', icon: <StorageRounded sx={ic} />, label: '磁盘', text: `${gib(lu)}/${gib(lt)} GB ${fmtPct(pct(lu, lt))}%`, lines })
+    out.push({ id: 'disk', icon: <StorageRounded sx={ic} />, label: '磁盘', text: `${gib(lu)}/${gib(lt)} GB ${fmtPct(pct(lu, lt))}%`, lines: info.container ? ['实例销毁后自动回收'] : [], table: local.map(row) })
   }
   if (cloud.length) {
     const ct = cloud.reduce((a, d) => a + d.total, 0), cu = cloud.reduce((a, d) => a + d.used, 0)
-    out.push({ id: 'cloud', icon: <CloudOutlined sx={ic} />, label: '云盘', text: `${gib(cu)}/${gib(ct)} GB ${fmtPct(pct(cu, ct))}%`, lines: [...cloud.map(row), '实例销毁后不回收'] })
+    out.push({ id: 'cloud', icon: <CloudOutlined sx={ic} />, label: '云盘', text: `${gib(cu)}/${gib(ct)} GB ${fmtPct(pct(cu, ct))}%`, lines: ['实例销毁后不回收'], table: cloud.map(row) })
   }
   return out
 }
@@ -106,7 +109,7 @@ export function StatStrip({ info }: { info: SysInfo | null }) {
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.2, flexShrink: 0 }}>
       {es.map((e) => {
         const body = <span style={{ whiteSpace: 'nowrap', cursor: 'default' }}>{e.icon}{e.label} {e.text}</span>
-        return e.lines.length ? <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.lines} />}>{body}</Tooltip> : <span key={e.id}>{body}</span>
+        return e.lines.length || e.table?.length ? <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.lines} table={e.table} />}>{body}</Tooltip> : <span key={e.id}>{body}</span>
       })}
     </Box>
   )

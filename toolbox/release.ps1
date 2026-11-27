@@ -100,6 +100,11 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         git -C $top commit -q -m $msg 2>$null | Out-Null
         "已提交 git：发布 $ver"
       }
+      if (git -C $top remote 2>$null) {                          # 有远程（GitHub 开源仓库）就顺手推上去；推不上去不算发布失败
+        $env:GIT_TERMINAL_PROMPT = '0'
+        git -C $top push -q origin HEAD 2>$null | Out-Null
+        if ($LASTEXITCODE) { "（git push 没成功，之后手动推一下）" } else { "已推送到 GitHub" }
+      }
     }
   } finally { $ErrorActionPreference = $oldEap }
 }

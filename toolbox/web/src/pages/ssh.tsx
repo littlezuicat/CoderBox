@@ -895,7 +895,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
   const openTerm = (a: string) => { if (ide) { picked.current = true; setSel(a); return } picked.current = true; setSel(a); setTab(1); setTermHosts((l) => (l.includes(a) ? l : [...l, a])) }
   // 用本机的 VS Code（Remote-SSH）打开这台主机；连接和密钥用的就是 ~/.ssh/config 里这台的配置
   const openVscode = async (alias: string) => {
-    const r = await api.open_vscode(alias, '')
+    const r = await api.open_vscode(alias, CUR_DIR[alias] || '')
     setNote(r?.ok ? `已用 VS Code 打开 ${alias}（第一次连接要等它在服务器上准备一会儿）` : `${alias}：${r?.error || '没能打开 VS Code'}`)
   }
   const choose = (a: string) => { if (a === sel) return; picked.current = true; setSel(a); if (ide) return; if (tab === 1) openTerm(a); else if (tab === 0) openFiles(a) }

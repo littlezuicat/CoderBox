@@ -1517,7 +1517,8 @@ class Api:
         if not p:
             r = sshhosts.fs_list(alias, "")
             p = r.get("path") if r.get("ok") else ""
-        uri = "vscode-remote://ssh-remote+%s%s" % (alias, p if p.startswith("/") else "/" + p if p else "")
+        from urllib.parse import quote
+        uri = "vscode-remote://ssh-remote+%s%s" % (alias, quote(p if p.startswith("/") else "/" + p if p else "", safe="/"))      # 路径里有中文/空格要转义
         args = ["--folder-uri", uri] if p else ["--remote", "ssh-remote+" + alias]
         try:
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)

@@ -5,17 +5,17 @@ import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded'
 import CreateNewFolderOutlined from '@mui/icons-material/CreateNewFolderOutlined'
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
 import FolderRounded from '@mui/icons-material/FolderRounded'
-import DriveFolderUploadOutlined from '@mui/icons-material/DriveFolderUploadOutlined'
+import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined'
 import NoteAddOutlined from '@mui/icons-material/NoteAddOutlined'
-import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined'
+import UndoRounded from '@mui/icons-material/UndoRounded'
 import RefreshRounded from '@mui/icons-material/RefreshRounded'
-import { alpha, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, LinearProgress, ListItemText, Menu, MenuItem, TextField, Tooltip, Typography, useTheme } from '@mui/material'
+import { alpha, Box, Divider, IconButton, InputBase, LinearProgress, ListItemText, Menu, MenuItem, Tooltip, Typography, useTheme } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
-import { rounded } from '../components/common'
-import { useEvent } from '../hooks'
+import { getSetting, putSetting, useEvent } from '../hooks'
 import FileIcon from './file-icon'
+import FolderPicker from './folder-picker'
 
 type Ent = { name: string; dir: boolean; size: number; mtime: number }
 type Item = { path: string; name: string; dir: boolean }
@@ -25,7 +25,8 @@ const baseOf = (p: string) => p.replace(/\/+$/, '').split('/').pop() || '/'
 const ARC = /\.(zip|jar|tar|tgz|tbz2|txz|tar\.(gz|bz2|xz|zst|lz)|7z|rar|gz|bz2|xz)$/i
 const groupByDir = (items: Item[]) => { const m = new Map<string, string[]>(); items.forEach((i) => { const d = parentOf(i.path); m.set(d, [...(m.get(d) || []), i.name]) }); return m }
 
-type Prompt = null | { kind: 'file' | 'dir' | 'rename'; dir: string; old?: string; text: string }
+type Edit = null | { kind: 'file' | 'dir' | 'rename'; dir: string; old?: string; isDir?: boolean; text: string; err?: string }      // 树里正在行内输入名字的那一行
+type Undo = { label: string; run: () => Promise<any>; refresh: string[] }
 let CLIP: null | { alias: string; items: Item[]; cut: boolean } = null      // 树里的剪切/复制板（跨主机不通用）
 
 export default function Explorer({ alias, active, onOpen, onResult }: { alias: string; active?: boolean; onOpen: (path: string) => void; onResult?: (ok: boolean, conn: boolean, err?: string) => void }) {
@@ -41,7 +42,9 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   const [prog, setProg] = useState<null | { sent: number; total: number; file: string }>(null)
   const [, setClipVer] = useState(0)
   const [menu, setMenu] = useState<null | { x: number; y: number }>(null)
-  const [prompt, setPrompt] = useState<Prompt>(null)
+  const [edit, setEdit] = useState<Edit>(null)
+  const [undos, setUndos] = useState<Undo[]>([])
+  const [picker, setPicker] = useState(false)
   const dirsRef = useRef(dirs); dirsRef.current = dirs
   const anchor = useRef('')
   const box = useRef<HTMLDivElement>(null)
@@ -58,7 +61,21 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     if (!r.ok) { setErr(r.error || '读取失败'); return null }
     setErr(''); setDirs((d) => ({ ...d, [r.path]: r.entries })); return r.path as string
   }
-  useEffect(() => { load('').then((p) => { if (p) { setRoot(p); setOpen(new Set([p])) } }) }, [alias])
+  useEffect(() => {
+    setUndos([]); setEdit(null); setSel(new Set()); setDirs({})
+    const saved = getSetting('ide.folder.' + alias, '') as string
+    const go = async () => {
+      let p = saved ? await load(saved) : null
+      if (!p) p = await load('')
+      if (p) { setRoot(p); setOpen(new Set([p])) }
+    }
+    go()
+  }, [alias])
+  const openFolder = (p: string) => {
+    putSetting('ide.folder.' + alias, p)
+    setPicker(false); setUndos([]); setSel(new Set()); setEdit(null); setDirs({})
+    load(p).then((q) => { if (q) { setRoot(q); setOpen(new Set([q])) } })
+  }
 
   const toggle = async (p: string) => {
     if (open.has(p)) { setOpen((o) => { const n = new Set(o); n.delete(p); return n }); return }
@@ -80,7 +97,20 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
 
   // ---- 行 / 选择
   const rows: { path: string; ent: Ent; depth: number }[] = []
-  const walk = (p: string, depth: number) => { for (const e of dirsRef.current[p] || []) { const q = join(p, e.name); rows.push({ path: q, ent: e, depth }); if (e.dir && open.has(q)) walk(q, depth + 1) } }
+  const view: ({ path: string; ent: Ent; depth: number } | { edit: true; depth: number })[] = []
+  const walk = (p: string, depth: number) => {
+    const es = dirsRef.current[p] || []
+    const nd = es.filter((e) => e.dir).length
+    if (edit && edit.kind === 'dir' && edit.dir === p) view.push({ edit: true, depth })              // 新建文件夹：在这个目录的最上面
+    es.forEach((e, i) => {
+      if (edit && edit.kind === 'file' && edit.dir === p && i === nd) view.push({ edit: true, depth })  // 新建文件：排在文件夹后面、文件前面
+      const q = join(p, e.name)
+      const r = { path: q, ent: e, depth }
+      rows.push(r); view.push(r)
+      if (e.dir && open.has(q)) walk(q, depth + 1)
+    })
+    if (edit && edit.kind === 'file' && edit.dir === p && nd >= es.length) view.push({ edit: true, depth })
+  }
   if (root && open.has(root)) walk(root, 0)
   const selItems = (): Item[] => rows.filter((r) => sel.has(r.path)).map((r) => ({ path: r.path, name: r.ent.name, dir: r.ent.dir }))
   const items = selItems()
@@ -108,15 +138,17 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     for (const it of picked) if (it.dir && (dest === it.path || dest.startsWith(it.path + '/'))) return setInfo('不能把文件夹移动到它自己里面。')
     setWork(true); setInfo('')
     let n = 0, e = ''
+    const moved: string[][] = []
     for (const [dir, names] of groups) {
       if (dir === dest) continue
       const r = await api.ssh_mv(alias, dir, names, dest)
       if (!r.ok) { e = r.error || '移动失败'; break }
-      n += r.count ?? names.length
+      n += r.count ?? names.length; moved.push(...(r.pairs || []))
     }
     setWork(false)
     if (e) return setInfo(e)
     if (!n) return
+    pushUndo({ label: `移动 ${n} 项`, run: () => api.ssh_mv_paths(alias, moved.map(([a, b]: string[]) => [b, a])), refresh: [dest, ...groups.keys()] })
     setInfo(`已移动 ${n} 项到 ${baseOf(dest)}`)
     for (const d of new Set([dest, ...groups.keys()])) if (d === dest || dirsRef.current[d]) await refresh(d)
     setOpen((o) => new Set(o).add(dest)); setSel(new Set())
@@ -186,18 +218,54 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     if (!r.ok) { setInfo(r.error || '操作失败'); return false }
     setInfo(ok); await refresh(reload); return true
   }
-  const submitPrompt = async () => {
-    const pr = prompt; setPrompt(null)
-    const name = pr?.text.trim()
-    if (!pr || !name) return
-    if (/[\\/]/.test(name)) return setInfo('名字里不能有 / 或 \\')
-    const names = (dirsRef.current[pr.dir] || []).map((e) => e.name)
-    if (names.includes(name) && name !== pr.old) return setInfo('已经有同名的文件或文件夹了')
-    if (pr.kind === 'file') { if (await run(() => api.ssh_write_file(alias, join(pr.dir, name), ''), `已新建 ${name}`, pr.dir)) onOpen(join(pr.dir, name)) }
-    else if (pr.kind === 'dir') await run(() => api.ssh_mkdir(alias, pr.dir, name), `已新建文件夹 ${name}`, pr.dir)
-    else if (pr.old && name !== pr.old) await run(() => api.ssh_rename(alias, pr.dir, pr.old!, name), '已重命名', pr.dir)
+  const pushUndo = (u: Undo) => setUndos((s) => [...s.slice(-49), u])
+  const doUndo = async () => {
+    const u = undos[undos.length - 1]; if (!u || work) return
+    setUndos((s) => s.slice(0, -1)); setWork(true); setInfo('')
+    const r = await u.run()
+    setWork(false)
+    if (!r?.ok) return setInfo(r?.error || '撤销失败')
+    setInfo('已撤销：' + u.label)
+    for (const d of new Set(u.refresh)) if (d === root || dirsRef.current[d]) await refresh(d)
   }
-  const startRename = () => { if (single) setPrompt({ kind: 'rename', dir: parentOf(single.path), old: single.name, text: single.name }) }
+  // 行内新建 / 重命名（像 VS Code：树里直接出现一行输入框）
+  const startCreate = async (kind: 'file' | 'dir') => {
+    if (!root) return
+    const dir = pasteDir() || root
+    if (!open.has(dir)) { if (!dirsRef.current[dir]) await load(dir); setOpen((o) => new Set(o).add(dir)) }
+    setEdit({ kind, dir, text: '' })
+  }
+  const startRename = () => { if (single) setEdit({ kind: 'rename', dir: parentOf(single.path), old: single.name, isDir: single.dir, text: single.name }) }
+  const submitEdit = async (ed: NonNullable<Edit>) => {
+    const name = ed.text.trim()
+    if (!name || (ed.kind === 'rename' && name === ed.old)) return setEdit(null)
+    if (/[\\/]/.test(name) || name === '.' || name === '..') return setEdit({ ...ed, err: '名字里不能有 / 或 \\' })
+    if ((dirsRef.current[ed.dir] || []).some((e) => e.name === name)) return setEdit({ ...ed, err: `这里已经有“${name}”了` })
+    setEdit(null)
+    const full = join(ed.dir, name)
+    if (ed.kind === 'file') {
+      if (await run(() => api.ssh_write_file(alias, full, ''), `已新建 ${name}`, ed.dir)) { pushUndo({ label: `新建 ${name}`, run: () => api.ssh_rm_paths(alias, [full]), refresh: [ed.dir] }); onOpen(full) }
+    } else if (ed.kind === 'dir') {
+      if (await run(() => api.ssh_mkdir(alias, ed.dir, name), `已新建文件夹 ${name}`, ed.dir)) pushUndo({ label: `新建文件夹 ${name}`, run: () => api.ssh_rm_paths(alias, [full]), refresh: [ed.dir] })
+    } else if (ed.old) {
+      const from = join(ed.dir, ed.old)
+      if (await run(() => api.ssh_rename(alias, ed.dir, ed.old!, name), '已重命名', ed.dir)) pushUndo({ label: `重命名 ${ed.old}`, run: () => api.ssh_mv_paths(alias, [[full, from]]), refresh: [ed.dir] })
+    }
+  }
+  const editRow = (depth: number, isDir: boolean, key: string) => edit && (
+    <Box key={key} sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, fontSize: 13 }}>
+      <Box sx={{ width: 18, flexShrink: 0, display: 'flex' }}>{isDir ? <ChevronRightRounded sx={{ fontSize: 18 }} /> : null}</Box>
+      {isDir ? <FolderRounded sx={{ fontSize: 17, mr: 0.7, color: 'primary.main', flexShrink: 0 }} /> : <FileIcon name={edit.text || 'x'} dark={dark} />}
+      <Tooltip open={!!edit.err} title={edit.err || ''} placement="bottom-start" arrow>
+        <InputBase autoFocus value={edit.text} spellCheck={false} onChange={(e) => setEdit((x) => x && { ...x, text: e.target.value, err: undefined })}
+          onFocus={(e) => { const v = e.target.value, dot = v.lastIndexOf('.'); e.target.setSelectionRange(0, edit.kind === 'rename' && !isDir && dot > 0 ? dot : v.length) }}
+          onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') submitEdit(edit); else if (e.key === 'Escape') setEdit(null) }}
+          onBlur={() => { if (edit.text.trim() && !edit.err) submitEdit(edit); else setEdit(null) }}
+          onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}
+          sx={{ flex: 1, minWidth: 0, height: 22, px: 0.6, fontSize: 13, borderRadius: 0.5, border: 1, borderColor: edit.err ? 'error.main' : 'primary.main', bgcolor: 'background.paper' }} />
+      </Tooltip>
+    </Box>
+  )
 
   const doCut = () => {
     if (!items.length) return
@@ -223,15 +291,18 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     const dest = pasteDir(), groups = groupByDir(c.items)
     setWork(true); setInfo('')
     let n = 0, e = ''
+    const moved: string[][] = [], made: string[] = []
     for (const [dir, names] of groups) {
       if (c.cut && dir === dest) continue
       const r = await (c.cut ? api.ssh_mv(alias, dir, names, dest) : api.ssh_cp(alias, dir, names, dest))
       if (!r.ok) { e = r.error || '操作失败'; break }
-      n += r.count ?? names.length
+      n += r.count ?? names.length; moved.push(...(r.pairs || [])); made.push(...(r.created || []))
     }
     setWork(false)
     if (e) return setInfo(e)
     if (c.cut) { CLIP = null; setClipVer((v) => v + 1) }
+    if (c.cut && moved.length) pushUndo({ label: `移动 ${n} 项`, run: () => api.ssh_mv_paths(alias, moved.map(([a, b]) => [b, a])), refresh: [dest, ...groups.keys()] })
+    if (!c.cut && made.length) pushUndo({ label: `复制 ${n} 项`, run: () => api.ssh_rm_paths(alias, made), refresh: [dest] })
     setInfo(`已${c.cut ? '移动' : '复制'} ${n} 项到 ${baseOf(dest)}`)
     for (const d of new Set([dest, ...groups.keys()])) if (d === dest || dirsRef.current[d]) await refresh(d)
     setOpen((o) => new Set(o).add(dest))
@@ -247,9 +318,11 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     setWork(true); setInfo('')
     const groups = groupByDir(items)
     let n = 0, e = ''
+    const trashed: string[][] = []
     for (const [dir, names] of groups) {
       const r = await api.ssh_trash(alias, dir, names)
       if (!r.ok) { e = r.error || '删除失败'; break }
+      if (!r.big) trashed.push(...(r.pairs || []))
       if (r.big) {
         if (!window.confirm(`“${names.join('、')}”超过 100MB，删除后无法恢复，确定删除吗？`)) continue
         const r2 = await api.ssh_rm(alias, dir, names)
@@ -259,19 +332,26 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     }
     setWork(false)
     setSel(new Set())
+    if (trashed.length) pushUndo({ label: `删除 ${trashed.length} 项`, run: () => api.ssh_restore(alias, trashed), refresh: [...groups.keys()] })
     for (const d of groups.keys()) if (dirsRef.current[d]) await refresh(d)
     setInfo(e || `已删除 ${n} 项`)
   }
   const doArchive = () => {
     if (!sameParent) return
     const parent = parentOf(items[0].path)
-    run(() => api.ssh_archive(alias, parent, items.map((i) => i.name), 'zip'), `已压缩 ${items.length} 项`, parent)
+    let made: string[] = []
+    run(async () => { const r = await api.ssh_archive(alias, parent, items.map((i) => i.name), 'zip'); made = r.created || []; return r }, `已压缩 ${items.length} 项`, parent).then((ok) => { if (ok && made.length) pushUndo({ label: '压缩', run: () => api.ssh_rm_paths(alias, made), refresh: [parent] }) })
   }
-  const doExtract = () => { if (single) run(() => api.ssh_extract(alias, parentOf(single.path), [single.name], false), `已解压 ${single.name}`, parentOf(single.path)) }
+  const doExtract = () => {
+    if (!single) return
+    const par = parentOf(single.path)
+    let made: string[] = []
+    run(async () => { const r = await api.ssh_extract(alias, par, [single.name], false); made = r.created || []; return r }, `已解压 ${single.name}`, par).then((ok) => { if (ok && made.length) pushUndo({ label: '解压', run: () => api.ssh_rm_paths(alias, made), refresh: [par] }) })
+  }
 
   // ---- 快捷键（树获得焦点时）：Ctrl+X/C/V、Shift+Alt+C、Ctrl+K Ctrl+Shift+C、F2、Delete
   const onKey = (e: React.KeyboardEvent) => {
-    if (prompt || menu) return
+    if (edit || menu) return
     const c = e.ctrlKey || e.metaKey
     if (c && e.code === 'KeyK') { e.preventDefault(); chord.current = Date.now(); return }
     const chorded = chord.current && Date.now() - chord.current < 2000; chord.current = 0
@@ -280,6 +360,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     else if (c && !e.shiftKey && !e.altKey && e.code === 'KeyX') { e.preventDefault(); doCut() }
     else if (c && !e.shiftKey && !e.altKey && e.code === 'KeyV') { e.preventDefault(); doPaste() }
     else if (e.shiftKey && e.altKey && !c && e.code === 'KeyC') { e.preventDefault(); copyPath(false) }
+    else if (c && !e.shiftKey && !e.altKey && e.code === 'KeyZ') { e.preventDefault(); doUndo() }
     else if (e.key === 'F2') { e.preventDefault(); startRename() }
     else if (e.key === 'Delete') { e.preventDefault(); doDelete() }
   }
@@ -290,11 +371,11 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     <MenuItem dense disabled={extra?.disabled} onClick={act(f)} sx={{ color: extra?.color }}><ListItemText>{label}</ListItemText>{key && hint(key)}</MenuItem>
   )
   const pct = prog && prog.total ? Math.min(100, (prog.sent / prog.total) * 100) : 0
-  const hasMenu = items.length > 0 || !!CLIP
+  const hasMenu = !!root
 
   return (
     <Box ref={box} tabIndex={0} onKeyDown={onKey} sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, userSelect: 'none', outline: 'none' }}
-      onContextMenu={(e) => { e.preventDefault(); setSel(new Set()); if (CLIP) setMenu({ x: e.clientX, y: e.clientY }) }}>
+      onContextMenu={(e) => { e.preventDefault(); setSel(new Set()); setMenu({ x: e.clientX, y: e.clientY }) }}>
       {ghost && (
         <Box sx={{ position: 'fixed', left: ghost.x + 14, top: ghost.y + 10, zIndex: 3000, pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 0.7, px: 1, height: 26, borderRadius: 1.5, fontSize: 13, maxWidth: 260,
           bgcolor: 'background.paper', color: 'text.primary', border: 1, borderColor: 'primary.main', boxShadow: 4 }}>
@@ -305,10 +386,10 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
       )}
       <Box sx={{ display: 'flex', alignItems: 'center', px: 1, height: 34, flexShrink: 0 }}>
         <Typography sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.5, color: 'text.secondary', flex: 1 }}>资源管理器</Typography>
-        <Tooltip title="新建文件"><IconButton size="small" disabled={!root} onClick={() => setPrompt({ kind: 'file', dir: single?.dir ? single.path : single ? parentOf(single.path) : root, text: '' })}><NoteAddOutlined sx={{ fontSize: 17 }} /></IconButton></Tooltip>
-        <Tooltip title="新建文件夹"><IconButton size="small" disabled={!root} onClick={() => setPrompt({ kind: 'dir', dir: single?.dir ? single.path : single ? parentOf(single.path) : root, text: '' })}><CreateNewFolderOutlined sx={{ fontSize: 17 }} /></IconButton></Tooltip>
-        <Tooltip title="上传文件到服务器（也可以把文件拖进窗口）"><span><IconButton size="small" disabled={!root || !!prog} onClick={async () => upload(await api.pick_files('any'))}><UploadFileOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
-        <Tooltip title="上传文件夹"><span><IconButton size="small" disabled={!root || !!prog} onClick={async () => { const d = await api.pick_folder(); if (d) upload([d]) }}><DriveFolderUploadOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
+        <Tooltip title="打开文件夹"><span><IconButton size="small" disabled={!root} onClick={() => setPicker(true)}><FolderOpenOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
+        <Tooltip title="新建文件"><span><IconButton size="small" disabled={!root} onClick={() => startCreate('file')}><NoteAddOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
+        <Tooltip title="新建文件夹"><span><IconButton size="small" disabled={!root} onClick={() => startCreate('dir')}><CreateNewFolderOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
+        <Tooltip title={undos.length ? `撤销：${undos[undos.length - 1].label}（Ctrl+Z）` : '没有可撤销的操作'}><span><IconButton size="small" disabled={!undos.length || work} onClick={doUndo}><UndoRounded sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
         <Tooltip title="刷新"><IconButton size="small" disabled={!root} onClick={() => open.forEach((p) => refresh(p))}><RefreshRounded sx={{ fontSize: 17 }} /></IconButton></Tooltip>
       </Box>
       {root && <Box data-exrow={root} data-dir="1" onClick={() => toggle(root)} sx={{ outline: dropOn === root ? '1px solid' : 'none', outlineColor: 'primary.main', outlineOffset: -1, display: 'flex', alignItems: 'center', px: 0.8, height: 24, flexShrink: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, '&:hover': { bgcolor: 'action.hover' } }}>
@@ -318,7 +399,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
         : (busy.size > 0 || work) && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
         {err && <Typography sx={{ m: 1, fontSize: 12.5, color: 'text.secondary' }}>{err}</Typography>}
-        {rows.map(({ path, ent, depth }) => (
+        {view.map((v, vi) => 'edit' in v ? editRow(v.depth, edit?.kind === 'dir', 'edit' + vi) : (edit?.kind === 'rename' && edit.dir === parentOf(v.path) && edit.old === v.ent.name) ? editRow(v.depth, v.ent.dir, v.path) : (({ path, ent, depth }) => (
           <Box key={path} data-exrow={path} data-dir={ent.dir ? '1' : '0'} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); box.current?.focus(); if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path } setMenu({ x: e.clientX, y: e.clientY }) }}
             sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', outline: dropOn && ent.dir && dropOn === path ? '1px solid' : 'none', ...(dropOn && ent.dir && dropOn === path ? { bgcolor: (th: any) => alpha(th.palette.primary.main, 0.16) } : {}), outlineColor: 'primary.main', outlineOffset: -1, '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
@@ -328,7 +409,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ent.name}</span>
             {busy.has(path) && <Box sx={{ ml: 'auto', width: 10, height: 10, borderRadius: '50%', border: 2, borderColor: 'primary.main', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', '@keyframes spin': { to: { transform: 'rotate(360deg)' } } }} />}
           </Box>
-        ))}
+        ))(v))}
       </Box>
       {(info || prog) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5, borderTop: 1, borderColor: 'divider' }}>
@@ -340,10 +421,13 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
       )}
 
       <Menu open={!!menu && hasMenu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined} slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 250 } } }} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
+        {item('新建文件…', '', () => startCreate('file'))}
+        {item('新建文件夹…', '', () => startCreate('dir'))}
+        <Divider />
         {items.length > 0 && item('剪切', 'Ctrl+X', doCut)}
         {items.length > 0 && item('复制', 'Ctrl+C', doCopy)}
         {!!CLIP && item(`粘贴${CLIP.alias === alias ? `（${CLIP.items.length} 项）` : ''}`, 'Ctrl+V', doPaste, { disabled: CLIP.alias !== alias })}
-        {items.length > 0 && <Divider />}
+        {(items.length > 0 || !!CLIP) && <Divider />}
         {items.length > 0 && item('下载…', '', doDownload)}
         {(sameParent || (single && !single.dir && ARC.test(single.name))) && <Divider />}
         {sameParent && item('压缩为 ZIP', '', doArchive)}
@@ -352,17 +436,11 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
         {items.length > 0 && item('复制路径', 'Shift+Alt+C', () => copyPath(false))}
         {items.length > 0 && item('复制相对路径', 'Ctrl+K Ctrl+Shift+C', () => copyPath(true))}
         {items.length > 0 && <Divider />}
+        {undos.length > 0 && item(`撤销：${undos[undos.length - 1].label}`, 'Ctrl+Z', doUndo)}
         {single && item('重命名…', 'F2', startRename)}
         {items.length > 0 && item('删除', 'Del', doDelete, { color: 'error.main' })}
       </Menu>
-      <Dialog open={!!prompt} onClose={() => setPrompt(null)} slotProps={{ paper: { sx: { borderRadius: 3, width: 380 } } }}>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>{prompt?.kind === 'file' ? '新建文件' : prompt?.kind === 'dir' ? '新建文件夹' : '重命名'}</DialogTitle>
-        <DialogContent>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, wordBreak: 'break-all' }}>{prompt?.dir}</Typography>
-          <TextField autoFocus fullWidth size="small" value={prompt?.text || ''} onChange={(e) => setPrompt((p) => p && { ...p, text: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') submitPrompt() }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}><Button onClick={() => setPrompt(null)} sx={rounded}>取消</Button><Button variant="contained" onClick={submitPrompt} sx={rounded}>确定</Button></DialogActions>
-      </Dialog>
+      <FolderPicker alias={alias} open={picker} initial={root} onClose={() => setPicker(false)} onPick={openFolder} />
     </Box>
   )
 }

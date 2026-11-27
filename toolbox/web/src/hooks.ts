@@ -24,3 +24,6 @@ export function useSetting<T>(key: string, def: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(getSetting(key, def))
   return [v, (x: T) => { setV(x); store[key] = x; api.settings_set(key, x) }]
 }
+
+/** 直接写一项设置（不用 state）。 */
+export const putSetting = (k: string, v: any) => { store[k] = v; api.settings_set(k, v) }

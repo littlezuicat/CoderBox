@@ -198,9 +198,9 @@ export const mock: any = {
   devsec_fix: async () => { await sleep(1200); return { ok: true, data: { msg: '已修复（演示）。', changed: true } } },
   devsec_dns: async () => { await sleep(2500); return { ok: true, data: { servers: [], resolved: ['198.18.0.5'] } } },
   devsec_avail: async () => { await sleep(1200); return { ok: true, data: { sites: [{ name: 'claude.ai', ok: true, ms: 210 }, { name: 'anthropic.com', ok: true, ms: 320 }], status: 'none' } } },
-  ssh_mv_paths: (_a: string, pairs: any[]) => ({ ok: true, count: pairs.length, pairs }),
+  ssh_mv_paths: (_a: string, pairs: any[]) => { pairs.forEach(([x, y]: string[]) => { const a = vfsNorm(x), b = vfsNorm(y); for (const [k, v] of [...VFS.entries()]) if (k === a || k.startsWith(a + '/')) { VFS.delete(k); VFS.set(b + k.slice(a.length), v) } }); return { ok: true, count: pairs.length, pairs } },
   ssh_restore: (_a: string, pairs: any[]) => ({ ok: true, count: pairs.length }),
-  ssh_rm_paths: (_a: string, p: any[]) => ({ ok: true, count: p.length }),
+  ssh_rm_paths: (_a: string, p: any[]) => { p.forEach((x: string) => vfsDel(vfsNorm(x))); return { ok: true, count: p.length } },
   ssh_rmdir: () => ({ ok: true }),
   ssh_mv: (_a: string, parent: string, names: string[], dest: string) => {
     names.forEach((x) => { const a = vfsNorm(parent + '/' + x), b = vfsNorm(dest + '/' + x); for (const [k, v] of [...VFS.entries()]) if (k === a || k.startsWith(a + '/')) { VFS.delete(k); VFS.set(b + k.slice(a.length), v) } })

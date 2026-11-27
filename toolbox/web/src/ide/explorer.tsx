@@ -421,7 +421,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onResult }:
           </Box>
         ))(v))}
       </Box>
-      {(info || prog) && (
+      {(prog || (info && !/^(已|正在|上传到)/.test(info))) && (      // 成功/进度的提示不占地方（文件树里已经看得到结果）；传输进度和出错的提示才显示
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5, borderTop: 1, borderColor: 'divider' }}>
           <Typography sx={{ fontSize: 11.5, color: 'text.secondary', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={info}>
             {prog ? `${info || '传输中…'}${prog.total ? ` ${Math.round(pct)}%` : ''}` : info}

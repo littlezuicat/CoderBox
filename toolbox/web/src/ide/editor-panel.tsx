@@ -8,7 +8,7 @@ import { StatStrip, type SysInfo } from '../components/sysinfo-bar'
 import FileIcon from './file-icon'
 import { langOf, monaco } from './monaco'
 
-type F = { model: any; enc: string; saved: number; view?: any }
+type F = { model: any; enc: string; saved: number; view?: any; saving?: boolean; timer?: number }
 export type OpenReq = { path: string; n: number } | null
 
 const base = (p: string) => p.split('/').pop() || p
@@ -34,19 +34,34 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
     e.setModel(f.model); if (f.view) e.restoreViewState(f.view)
     setCur(path); e.focus()
   }
-  const save = async () => {
-    const path = curRef.current, f = files.current.get(path)
-    if (!f) return
-    say('正在保存…')
-    const r = await api.ssh_write_file(alias, path, f.model.getValue(), f.enc)
-    if (!r.ok) return say(r.error || '保存失败')
-    f.saved = f.model.getAlternativeVersionId(); syncTabs(); say(`已保存 ${base(path)}`)
+  // 保存某个文件。改完停一会儿自动保存（SSH 主机上的文件不弹“没保存”确认），Ctrl+S 立刻保存
+  const saveFile = async (path: string): Promise<boolean> => {
+    const f = files.current.get(path)
+    if (!f) return true
+    window.clearTimeout(f.timer)
+    if (f.saving) return false
+    const ver = f.model.getAlternativeVersionId()
+    if (ver === f.saved) return true
+    f.saving = true; say('正在保存…')
+    let r: any
+    try { r = await api.ssh_write_file(alias, path, f.model.getValue(), f.enc) } catch (e) { r = { ok: false, error: String(e) } }
+    f.saving = false
+    if (!r.ok) { say(r.error || '保存失败'); return false }
+    f.saved = ver; syncTabs(); say(`已保存 ${base(path)}`)
+    if (files.current.get(path) === f && f.model.getAlternativeVersionId() !== f.saved) { f.timer = window.setTimeout(() => saveFile(path), 600) }      // 保存的过程中又改了
+    return true
   }
+  const autoSave = (path: string) => { const f = files.current.get(path); if (!f) return; window.clearTimeout(f.timer); f.timer = window.setTimeout(() => saveFile(path), 1200) }
+  const save = () => saveFile(curRef.current)
   const saveRef = useRef(save); saveRef.current = save
 
-  const close = (path: string) => {
+  const close = async (path: string) => {
     const f = files.current.get(path); if (!f) return
-    if (f.model.getAlternativeVersionId() !== f.saved && !window.confirm(`${base(path)} 有没保存的修改，确定关闭吗？`)) return
+    if (f.model.getAlternativeVersionId() !== f.saved) {
+      const ok = await saveFile(path)                 // 先自动保存；保存不了才问一句
+      if (!ok && !window.confirm(`${base(path)} 保存失败，确定不保存直接关闭吗？`)) return
+    }
+    window.clearTimeout(f.timer)
     const order = tabs.map((t) => t.path), i = order.indexOf(path)
     files.current.delete(path); f.model.dispose()
     const rest = order.filter((p) => p !== path)
@@ -81,7 +96,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
       if (files.current.has(path)) return show(path)
       const model = monaco.editor.createModel(r.text, langOf(path), monaco.Uri.parse(`remote://${alias}${path}`))
       const f: F = { model, enc: r.encoding, saved: model.getAlternativeVersionId() }
-      model.onDidChangeContent(() => syncTabs())
+      model.onDidChangeContent(() => { syncTabs(); autoSave(path) })
       files.current.set(path, f)
       setTabs((t) => [...t, { path, dirty: false }])
       show(path); say(`${base(path)} · ${r.encoding}`)

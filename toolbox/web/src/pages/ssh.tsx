@@ -938,17 +938,17 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
                         <Typography noWrap sx={{ fontWeight: 700, fontSize: ide ? 15 : 14 }}>{h.alias}</Typography>
+                        {c?.st === 'ok' && c.via === 'key' && h.common_key && (
+                          <Tooltip title="已配置密钥免密登录">
+                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', px: 0.7, borderRadius: 1, color: 'success.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
+                              <VpnKeyOutlined sx={{ fontSize: 11, mr: 0.3 }} /><Box component="span" sx={{ fontSize: 11, fontWeight: 700 }}>密钥</Box>
+                            </Box>
+                          </Tooltip>
+                        )}
                         {c?.st === 'ok' && c.internal && (
                           <Tooltip title="内网直连，速度更快">
                             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, px: 0.7, borderRadius: 1, fontSize: 11, fontWeight: 700, color: 'primary.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
                               <BoltRounded sx={{ fontSize: 13 }} />
-                            </Box>
-                          </Tooltip>
-                        )}
-                        {c?.st === 'ok' && c.via === 'key' && h.common_key && (
-                          <Tooltip title="已用通用密钥登录">
-                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', px: 0.7, borderRadius: 1, color: 'success.main', bgcolor: 'action.hover', lineHeight: 1.6, flexShrink: 0, cursor: 'default' }}>
-                              <VpnKeyOutlined sx={{ fontSize: 13 }} />
                             </Box>
                           </Tooltip>
                         )}

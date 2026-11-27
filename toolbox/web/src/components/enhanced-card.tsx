@@ -110,6 +110,8 @@ export const EnhancedCard = forwardRef<HTMLElement, EnhancedCardProps>(
         <Box
           sx={{
             flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
             p: noContentPadding ? 0 : 2,

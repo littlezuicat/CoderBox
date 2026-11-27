@@ -39,6 +39,16 @@ const GLYPH: Record<string, React.ReactNode> = {
     <rect x="3.5" y="13.5" width="17" height="6.5" rx="2.2" />
     <path d="M7.2 7.25h.01M7.2 16.75h.01M11 7.25h5.8M11 16.75h5.8" />
   </>),
+  // 设备安全：盾牌 + 对勾
+  security: (<>
+    <path d="M12 3.4l7 2.6v5.4c0 4.4-2.9 7.7-7 9.2-4.1-1.5-7-4.8-7-9.2V6z" />
+    <path d="M8.9 12.1l2.2 2.2 4.1-4.3" />
+  </>),
+  // 密码：钥匙
+  vault: (<>
+    <circle cx="8.2" cy="12" r="3.6" />
+    <path d="M11.8 12H20.4M17.4 12v3M20.4 12v2.2" />
+  </>),
   // 设置：三条滑杆
   settings: (<>
     <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />

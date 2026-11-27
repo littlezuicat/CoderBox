@@ -1,0 +1,7 @@
+/* VS Code 默认的文件图标字体（Seti，MIT，见同目录 ThirdPartyNotices.txt） */
+@font-face {
+  font-family: 'seti';
+  src: url('./seti.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}

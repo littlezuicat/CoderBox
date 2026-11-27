@@ -1,11 +1,13 @@
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined'
 import PersonOutline from '@mui/icons-material/PersonOutline'
 import PaletteOutlined from '@mui/icons-material/PaletteOutlined'
+import DownloadOutlined from '@mui/icons-material/DownloadOutlined'
 import FolderOutlined from '@mui/icons-material/FolderOutlined'
+import VpnKeyOutlined from '@mui/icons-material/VpnKeyOutlined'
 import InfoOutlined from '@mui/icons-material/InfoOutlined'
 import OpenInNew from '@mui/icons-material/OpenInNew'
 import { Avatar, Box, Button, CircularProgress, Typography } from '@mui/material'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
 import { BasePage } from '../components/base-page'
@@ -13,8 +15,8 @@ import { InfoTip, rounded, Row, Segment } from '../components/common'
 import { EnhancedCard } from '../components/enhanced-card'
 import { useEvent } from '../hooks'
 
-// 码境账号绑定功能先隐藏（后端和授权页都还在），要恢复把它改成 true
-const SHOW_ACCOUNT = false
+// 码境账号（设置页最上面的卡片）。2026-11-24 起显示；要再隐藏就改成 false
+const SHOW_ACCOUNT = true
 
 function Account() {
   const [st, setSt] = useState<any>(null)
@@ -91,8 +93,37 @@ function DownloadCard() {
   )
 }
 
-export default function SettingsPage({ pref, setPref, version }: { pref: 'light' | 'dark' | 'system'; setPref: (m: 'light' | 'dark' | 'system') => void; version: string }) {
+function KeyCard() {
+  const [k, setK] = useState<any>(null)
+  const [msg, setMsg] = useState('')
+  useEffect(() => { api.ssh_key_info().then(setK) }, [])
+  const save = async () => { setMsg(''); const r = await api.ssh_key_export(); if (r.ok) setMsg('已保存到文件保存位置。'); else if (!r.cancelled) setMsg(r.error || '保存失败') }
+  return (
+    <EnhancedCard title={<Box sx={{ display: 'flex', alignItems: 'center' }}><Typography variant="h6" sx={{ fontWeight: 'medium', fontSize: 16 }}>SSH 通用密钥</Typography>
+      <InfoTip text="所有主机共用同一对密钥。在 SSH 管理里点主机右边的“+密钥”图标，就会把它配到那台主机上（第一次会自动生成）。" /></Box>} icon={<VpnKeyOutlined />}>
+      {k && (k.exists
+        ? <>
+            <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all', userSelect: 'text', mb: 1 }}>{k.path}（及 .pub）</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button size="small" variant="outlined" startIcon={<DownloadOutlined />} sx={rounded} onClick={save}>下载密钥</Button>
+              {msg && <Typography variant="caption" color={msg.startsWith('已') ? 'success.main' : 'error.main'}>{msg}</Typography>}
+            </Box>
+          </>
+        : <Typography variant="body2" color="text.secondary">还没有通用密钥。在 SSH 管理里点主机右边的“+密钥”图标，会自动生成并配上。</Typography>)}
+    </EnhancedCard>
+  )
+}
+
+export default function SettingsPage({ pref, setPref, version, top, setTop }: { pref: 'light' | 'dark' | 'system'; setPref: (m: 'light' | 'dark' | 'system') => void; version: string; top?: boolean; setTop?: (v: boolean) => void }) {
   const [upd, setUpd] = useState('')
+  const waiting = useRef(false)
+  // 点“检查更新”后，在这里直接给结果：最新就说最新；有新版就说发现新版并自动更新（后台下载、换好后自己重启）
+  useEvent('update:state', (d: any) => {
+    if (!waiting.current) return
+    if (d.state === 'ok') { waiting.current = false; setUpd(String(d.text).startsWith('有新版') ? `发现${String(d.text).slice(2)}（源码版不自动更新）` : '已是最新版本。') }
+    else if (d.state === 'busy') setUpd(`发现新版本，正在自动更新…${d.text.includes('%') ? ' ' + d.text.replace('更新中 ', '') : ''}`)
+    else { waiting.current = false; setUpd('检查更新失败，稍后再试。') }
+  })
   return (
     <BasePage title="设置">
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: SHOW_ACCOUNT ? '1fr 1fr' : 'minmax(0, 560px)' }, gap: 1.5, alignItems: 'start' }}>
@@ -100,11 +131,13 @@ export default function SettingsPage({ pref, setPref, version }: { pref: 'light'
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <EnhancedCard title="外观" icon={<PaletteOutlined />}>
             <Row label="主题模式"><Segment value={pref === 'dark' ? 1 : pref === 'system' ? 2 : 0} options={['浅色', '深色', '系统']} onChange={(i) => setPref(i === 1 ? 'dark' : i === 2 ? 'system' : 'light')} /></Row>
+            <Row label="新布局（试用）"><Segment value={top ? 1 : 0} options={['侧边栏', '顶部栏']} onChange={(i) => setTop?.(i === 1)} /></Row>
           </EnhancedCard>
           <DownloadCard />
+          <KeyCard />
           <EnhancedCard title="关于" icon={<InfoOutlined />}>
-            <Row label="克劳德工具箱"><Typography color="text.secondary">v{version}</Typography></Row>
-            <Button variant="outlined" size="small" sx={{ ...rounded, alignSelf: 'flex-start', mt: 0.5 }} onClick={() => { api.update_check(); setUpd('已在检查，结果见左下角。') }}>检查更新</Button>
+            <Row label="码境工具箱"><Typography color="text.secondary">v{version}</Typography></Row>
+            <Button variant="outlined" size="small" sx={{ ...rounded, alignSelf: 'flex-start', mt: 0.5 }} onClick={() => { waiting.current = true; setUpd('正在检查…'); api.update_check() }}>检查更新</Button>
             {upd && <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>{upd}</Typography>}
           </EnhancedCard>
         </Box>

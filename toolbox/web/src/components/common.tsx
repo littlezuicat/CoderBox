@@ -5,12 +5,10 @@ import InfoRounded from '@mui/icons-material/InfoRounded'
 import { alpha, Box, Button, ButtonGroup, Chip, IconButton, LinearProgress, Tooltip, Typography, useTheme } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
-export function DropZone({ title, hint, onPick, disabled }: { title: string; hint: string; onPick: () => void; disabled?: boolean }) {
-  const theme = useTheme()
-  const dark = theme.palette.mode === 'dark'
+/** 文件拖到 box 上时返回 true（高亮用），拖离/放下/离开窗口就变回 false。 */
+export function useDropHighlight(box: React.MutableRefObject<HTMLElement | null>, disabled?: boolean) {
   const [active, setActive] = useState(false)
   const timer = useRef<any>(null)
-  const box = useRef<HTMLElement | null>(null)
   // 文件拖到框上时高亮，拖离就熄。pywebview 在 document 上拦了拖放事件，页面元素自己的 onDragOver 收不到，所以挂在 window 的捕获阶段。
   // 判断“在不在框里”用三种办法任一成立：事件目标元素在框内 / 鼠标坐标在框内 / 坐标按屏幕缩放比例还原后在框内
   // （高分屏上外部拖放事件的坐标有时是物理像素）。拖动过程中 dragover 不断触发，350ms 没有新事件就当离开了窗口。
@@ -32,6 +30,14 @@ export function DropZone({ title, hint, onPick, disabled }: { title: string; hin
     window.addEventListener('drop', off, true); window.addEventListener('dragend', off, true)
     return () => { clearTimeout(timer.current); window.removeEventListener('dragenter', over, true); window.removeEventListener('dragover', over, true); window.removeEventListener('drop', off, true); window.removeEventListener('dragend', off, true) }
   }, [disabled])
+  return active
+}
+
+export function DropZone({ title, hint, onPick, disabled }: { title: string; hint: string; onPick: () => void; disabled?: boolean }) {
+  const theme = useTheme()
+  const dark = theme.palette.mode === 'dark'
+  const box = useRef<HTMLElement | null>(null)
+  const active = useDropHighlight(box, disabled)
   return (
     <Box ref={box}
       onClick={() => !disabled && onPick()}

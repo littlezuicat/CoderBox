@@ -5,7 +5,7 @@ import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined'
 import { Alert, Box, Button, Checkbox, FormControlLabel, InputAdornment, LinearProgress, TextField, Typography } from '@mui/material'
 import { useEffect, useState } from 'react'
 
-import wordLight from '../assets/wordmark-light.png'
+import Logo from '../components/logo'
 import { api } from '../bridge'
 import { rounded } from '../components/common'
 import { useEvent } from '../hooks'
@@ -15,8 +15,8 @@ const STEPS = ['欢迎', '安装位置', '正在安装', '完成']
 function Side({ step, labels, version, uninstall }: { step: number; labels: string[]; version: string; uninstall?: boolean }) {
   return (
     <Box sx={{ width: 236, flexShrink: 0, color: '#fff', background: 'linear-gradient(160deg,#14233f 0%,#1d3a6b 100%)', p: 3.5, display: 'flex', flexDirection: 'column' }}>
-      <Box component="img" src={wordLight} alt="码境" sx={{ height: 26, width: 'auto', alignSelf: 'flex-start', mb: 0.8 }} />
-      <Typography sx={{ fontSize: 13, letterSpacing: '0.2em', opacity: 0.85 }}>克劳德工具箱</Typography>
+      <Logo dark height={26} style={{ alignSelf: 'flex-start', marginBottom: 6 }} />
+      <Typography sx={{ fontSize: 13, letterSpacing: '0.2em', opacity: 0.85 }}>码境工具箱</Typography>
       <Box sx={{ mt: 5, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {labels.map((l, i) => (
           <Box key={l} sx={{ display: 'flex', alignItems: 'center', gap: 1.4, opacity: i <= step ? 1 : 0.45 }}>
@@ -67,7 +67,7 @@ export function Installer() {
 
   if (step === 0) return (
     <Frame side={side} actions={<><Button onClick={() => api.installer_exit()} sx={rounded}>取消</Button><Button variant="contained" sx={rounded} onClick={() => setStep(1)}>下一步</Button></>}>
-      <Typography sx={{ fontSize: 24, fontWeight: 800, mb: 1 }}>欢迎使用克劳德工具箱</Typography>
+      <Typography sx={{ fontSize: 24, fontWeight: 800, mb: 1 }}>欢迎使用码境工具箱</Typography>
       <Typography color="text.secondary" sx={{ mb: 3 }}>PPT 定图 · 格式转换 · SSH 管理 · 在线工具</Typography>
       {st.existing
         ? <Alert severity="info" sx={{ borderRadius: 2 }}>已安装 v{st.existing.version || '?'}，继续会覆盖安装。你的设置和主机列表会保留。</Alert>
@@ -102,7 +102,7 @@ export function Installer() {
       <Box sx={{ width: 56, height: 56, borderRadius: '50%', bgcolor: '#3dd68c', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}><CheckRounded sx={{ color: '#fff', fontSize: 34 }} /></Box>
       <Typography sx={{ fontSize: 24, fontWeight: 800, mb: 1 }}>安装完成</Typography>
       <Typography color="text.secondary" sx={{ mb: 2.5, wordBreak: 'break-all' }}>已安装到 {dir}</Typography>
-      <FormControlLabel control={<Checkbox checked={run} onChange={(_, v) => setRun(v)} />} label="立即运行克劳德工具箱" />
+      <FormControlLabel control={<Checkbox checked={run} onChange={(_, v) => setRun(v)} />} label="立即运行码境工具箱" />
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>以后从桌面或开始菜单打开；这个安装包可以删掉了。</Typography>
     </Frame>
   )
@@ -123,7 +123,7 @@ export function Uninstaller() {
 
   if (step === 0) return (
     <Frame side={side} actions={<><Button onClick={() => api.installer_exit()} sx={rounded}>取消</Button><Button variant="contained" color="error" sx={rounded} onClick={async () => { setErr(''); setStep(1); await api.uninstall_run({ remove_data: data }) }}>卸载</Button></>}>
-      <Typography sx={{ fontSize: 22, fontWeight: 800, mb: 1.5 }}>卸载克劳德工具箱</Typography>
+      <Typography sx={{ fontSize: 22, fontWeight: 800, mb: 1.5 }}>卸载码境工具箱</Typography>
       <Typography color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.9 }}>将删除程序文件和快捷方式。</Typography>
       <FormControlLabel control={<Checkbox checked={data} onChange={(_, v) => setData(v)} />} label="同时删除我的设置和主机列表" />
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4 }}>不勾选的话，以后重装还能接着用。~/.ssh 里的密钥和配置不会被动。</Typography>

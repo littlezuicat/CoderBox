@@ -37,6 +37,7 @@ export function buildTheme(mode: 'light' | 'dark') {
   el.innerHTML = `
     body { font-family: ${dt.font_family}; background-color: var(--background-color); }
     .MuiPaper-root { border-color: ${mode === 'light' ? '#cccccc' : '#1E1E1E'} !important; }
+    .MuiBackdrop-root { transition: none !important; }      /* 弹窗遮罩不做淡入淡出：顶栏里原生的那一块是一步压暗的，网页遮罩渐变的话两边会有 0.2 秒对不上（先白后灰） */
     .MuiDialog-paper { background-color: ${mode === 'light' ? '#ffffff' : '#2E303D'} !important; }
     * { outline: none !important; box-shadow: none !important; }`
   return muiTheme

@@ -48,7 +48,7 @@ cd web; npx tsc --noEmit -p .                                           # 类型
 - 源码版（没打包）自动写详细日志 `toolbox\logs\debug.log`（`py\majing\log.py`），排查问题先看它。
 
 ## 发布规矩（用户明确要求）
-- **开源 + 每次改动都提交 git（2026-11-27 起，用户明确要求）**：代码以 GPL-3.0 开源（根目录 `LICENSE`、`README.md`）。**每做完一处改动就 `git commit`**（发布新版本时 release 的版本号改动也一起提交），提交信息用中文一句话说清改了什么；别把一堆改动攒着不提交。远程仓库是 https://github.com/littlezuicat/CoderBox（`origin/main`，2026-11-27 已推送）；`release.ps1` 发布后会自动提交并 `git push`，手动提交的也记得 `git push`。**绝不入库**：`release.config.json`、日志、`stage/ dist/ build/`、用户的密码/令牌/私钥、SakuraFrp 令牌、服务器上的凭证；提交前 `git status` 看一眼有没有不该进的文件。
+- **开源 + 每次改动都提交 git（2026-11-27 起，用户明确要求）**：代码以 GPL-3.0 开源（根目录 `LICENSE`、`README.md`）。**每做完一处改动就 `git commit`**（发布新版本时 release 的版本号改动也一起提交），提交信息用中文一句话说清改了什么；别把一堆改动攒着不提交。远程仓库是 https://github.com/littlezuicat/CoderBox（`origin/main`，2026-11-27 已推送）；`release.ps1` 发布后会自动提交并 `git push`，手动提交的也记得 `git push`。（Claude 的 PowerShell 工具里没有交互凭据，release.ps1 里的 push 会失败并提示“没成功”；这时在 Bash 工具里 `git push origin main` 就能推上去，每次发布后都要确认 `git status -sb` 不再显示 ahead。）**绝不入库**：`release.config.json`、日志、`stage/ dist/ build/`、用户的密码/令牌/私钥、SakuraFrp 令牌、服务器上的凭证；提交前 `git status` 看一眼有没有不该进的文件。
 - **改了功能就发布新版本**，让已装的工具箱检测到后自动更新；用户自己测试，不要等他点头再发（但先自己跑通能跑的验证）。
 - 版本号在 `py\majing\__init__.py` 的 APP_VERSION，必须比线上新（release.ps1 -Bump 自动加）。**不做数字签名**（用户已决定）。
 - 发布 = 把 exe 传到服务器，由服务器脚本检查（是 exe、>20MB、版本更高）→ 备份旧版到 `/var/www/toolbox/_prev/MajingToolbox-<旧版>.exe` + `version-<旧版>.json` → 写 `/var/www/toolbox/version.json`

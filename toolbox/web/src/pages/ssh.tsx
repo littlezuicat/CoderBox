@@ -935,7 +935,12 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 return (
                   <Box key={h.alias} onClick={() => choose(h.alias)} onDoubleClick={() => openTerm(h.alias)}
                     sx={ide
-                      ? { py: 1, px: 1.1, mb: 1, mx: 0.5, borderRadius: 2.5, cursor: 'pointer', border: 1, borderColor: sel === h.alias ? 'primary.main' : 'divider', bgcolor: (th: any) => sel === h.alias ? alpha(th.palette.primary.main, 0.08) : 'background.paper', transition: 'border-color .15s, background-color .15s', '&:hover': { borderColor: sel === h.alias ? 'primary.main' : 'text.disabled' } }
+                      ? {      // Clash Verge 节点卡片：白底圆角、没有描边；选中=淡蓝底 + 左边 3px 蓝条；悬停变灰
+                          py: 1, pl: 1.1, pr: 1.1, mb: 1, mx: 0.5, borderRadius: 2, cursor: 'pointer', borderLeftWidth: 3, borderLeftStyle: 'solid', borderLeftColor: sel === h.alias ? 'primary.main' : 'transparent',
+                          bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.22 : 0.14) : d ? '#282a36' : '#ffffff' },
+                          transition: 'background-color .15s',
+                          '&:hover': { bgcolor: (th: any) => { const d = th.palette.mode === 'dark'; return sel === h.alias ? alpha(th.palette.primary.main, d ? 0.26 : 0.18) : d ? '#33364a' : '#eeeeee' } },
+                        }
                       : { py: 0.9, px: 0.8, borderRadius: 1.5, cursor: 'pointer', bgcolor: sel === h.alias ? 'action.selected' : 'transparent', '&:hover': { bgcolor: sel === h.alias ? 'action.selected' : 'action.hover' } }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <Tooltip title={!c ? '还没测试，点右上角刷新' : c.st === 'checking' ? '正在测试连通性…' : `${c.st === 'ok' ? `已连接 · ${c.internal ? '内网' : '公网'} ${c.addr?.host || ''} · ${c.via === 'key' ? '密钥登录' : '密码登录'}` : `当前未连接（可能不在线或不在同一网络，不影响使用）。${soft(c.error)}`}${c.t ? `（上次测试 ${new Date(c.t * 1000).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}）` : ''}`}>

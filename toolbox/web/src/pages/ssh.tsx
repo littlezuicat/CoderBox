@@ -925,8 +925,9 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
   sortedRef.current = sorted
   const cur = hosts.find((h) => h.alias === sel)
 
-  const hostCard = (
-          <Box sx={{ flex: 1, minHeight: 0 }}><EnhancedCard title="主机" icon={<DnsOutlined />} minHeight={120} action={<Box sx={{ display: 'flex' }}>{ide && <><Tooltip title="共享本机 SSH"><IconButton size="small" onClick={() => setShareOpen(true)}><PeopleBadge n={people}><ShareOutlined fontSize="small" color={share.on ? 'success' : 'inherit'} /></PeopleBadge></IconButton></Tooltip><Tooltip title="添加主机"><IconButton size="small" onClick={() => setDlg({ host: null })}><AddRounded fontSize="small" /></IconButton></Tooltip></>}<Tooltip title="测试连接"><span><IconButton size="small" disabled={refreshing} onClick={refresh}><RefreshRounded fontSize="small" /></IconButton></span></Tooltip></Box>}>
+  const hostActions = <Box sx={{ display: 'flex' }}>{ide && <><Tooltip title="共享本机 SSH"><IconButton size="small" onClick={() => setShareOpen(true)}><PeopleBadge n={people}><ShareOutlined fontSize="small" color={share.on ? 'success' : 'inherit'} /></PeopleBadge></IconButton></Tooltip><Tooltip title="添加主机"><IconButton size="small" onClick={() => setDlg({ host: null })}><AddRounded fontSize="small" /></IconButton></Tooltip></>}<Tooltip title="测试连接"><span><IconButton size="small" disabled={refreshing} onClick={refresh}><RefreshRounded fontSize="small" /></IconButton></span></Tooltip></Box>
+  const hostBody = (
+          <>
             {hosts.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>还没有主机</Typography>}
             <Box sx={{ flex: 1, minHeight: 60, overflow: 'auto', mx: -0.5 }}>
               {sorted.map((h) => {
@@ -977,7 +978,19 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 )
               })}
             </Box>
-          </EnhancedCard></Box>
+          </>
+  )
+  const hostCard = ide ? (
+    // 新布局：不套卡片，标题行 + 列表直接放在左栏里（标题行和右边的主机头同高）
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', px: 1, height: 50, flex: '0 0 auto' }}>
+        <Typography sx={{ fontWeight: 700, fontSize: 14.5, flex: 1 }}>主机</Typography>
+        {hostActions}
+      </Box>
+      {hostBody}
+    </Box>
+  ) : (
+    <Box sx={{ flex: 1, minHeight: 0 }}><EnhancedCard title="主机" icon={<DnsOutlined />} minHeight={120} action={hostActions}>{hostBody}</EnhancedCard></Box>
   )
   const dialogs = (
     <>

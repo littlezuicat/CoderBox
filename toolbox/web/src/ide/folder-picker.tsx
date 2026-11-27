@@ -50,7 +50,10 @@ export default function FolderPicker({ alias, open, initial, onClose, onPick }: 
   useEffect(() => { document.querySelector('[data-fp-cur="1"]')?.scrollIntoView({ block: 'nearest' }) }, [cur, shown.length])
 
   return (
-    <Dialog open={open} onClose={onClose} slotProps={{ paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden' } } }}
+    // 背后不压灰，改成磨砂玻璃（invisible 遮罩 = 不触发顶栏原生按钮的压暗，页面本身也没变暗）
+    <Dialog open={open} onClose={onClose} slotProps={{
+      paper: { sx: { position: 'absolute', top: 36, m: 0, width: 'min(620px, 92vw)', borderRadius: 2, overflow: 'hidden' } },
+      backdrop: { invisible: true, sx: { backdropFilter: 'blur(12px) saturate(1.1)', WebkitBackdropFilter: 'blur(12px) saturate(1.1)', bgcolor: (th: any) => alpha(th.palette.background.default, 0.18) } } }}
       sx={{ '& .MuiDialog-container': { alignItems: 'flex-start', justifyContent: 'center' } }}>
       <Typography sx={{ textAlign: 'center', fontSize: 13, color: 'text.secondary', pt: 1, pb: 0.8 }}>打开文件夹（{alias}）</Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.2, pb: 1 }}>

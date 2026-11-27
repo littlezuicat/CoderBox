@@ -38,6 +38,8 @@ export function buildTheme(mode: 'light' | 'dark') {
     body { font-family: ${dt.font_family}; background-color: var(--background-color); }
     .MuiPaper-root { border-color: ${mode === 'light' ? '#cccccc' : '#1E1E1E'} !important; }
     .MuiBackdrop-root { transition: none !important; }      /* 弹窗遮罩不做淡入淡出：顶栏里原生的那一块是一步压暗的，网页遮罩渐变的话两边会有 0.2 秒对不上（先白后灰） */
+    /* 右键菜单、下拉菜单这类弹出层：和底下的面板拉开——更亮的底色 + 细边 + 阴影（上面全局关了 box-shadow，所以用 filter 画阴影） */
+    .MuiPopover-paper { background-color: ${mode === 'light' ? '#ffffff' : '#373a50'} !important; border: 1px solid ${mode === 'light' ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)'} !important; filter: drop-shadow(0 6px 16px rgba(0,0,0,${mode === 'light' ? '0.2' : '0.5'})); }
     .MuiDialog-paper { background-color: ${mode === 'light' ? '#ffffff' : '#2E303D'} !important; }
     * { outline: none !important; box-shadow: none !important; }`
   return muiTheme

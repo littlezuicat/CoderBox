@@ -98,25 +98,74 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   }
   useEvent('files:ssh', (paths: string[]) => { if (active) upload(paths) })
 
-  // 按住文件/文件夹往窗口外拖 = 下载（虚拟文件：拖的时候不下载，放进资源管理器/桌面那一刻才从服务器读）
+  // 按住文件/文件夹拖动：松在某个文件夹上 = 移动到那里；拖出窗口外（资源管理器、桌面）= 下载
+  // （虚拟文件：拖的时候不下载，放下那一刻才从服务器读）。拖动中悬停的文件夹高亮，悬停久了会自动展开。
+  const [dropOn, setDropOn] = useState('')
   const dragging = useRef(false)
+  const moveTo = async (picked: Item[], dest: string) => {
+    const groups = groupByDir(picked)
+    for (const it of picked) if (it.dir && (dest === it.path || dest.startsWith(it.path + '/'))) return setInfo('不能把文件夹移动到它自己里面。')
+    setWork(true); setInfo('')
+    let n = 0, e = ''
+    for (const [dir, names] of groups) {
+      if (dir === dest) continue
+      const r = await api.ssh_mv(alias, dir, names, dest)
+      if (!r.ok) { e = r.error || '移动失败'; break }
+      n += r.count ?? names.length
+    }
+    setWork(false)
+    if (e) return setInfo(e)
+    if (!n) return
+    setInfo(`已移动 ${n} 项到 ${baseOf(dest)}`)
+    for (const d of new Set([dest, ...groups.keys()])) if (d === dest || dirsRef.current[d]) await refresh(d)
+    setOpen((o) => new Set(o).add(dest)); setSel(new Set())
+  }
   const startDrag = (e: React.MouseEvent, path: string, ent: Ent) => {
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || dragging.current) return
     const x0 = e.clientX, y0 = e.clientY
-    const cleanup = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', cleanup) }
-    const move = (m: MouseEvent) => {
-      if (Math.hypot(m.clientX - x0, m.clientY - y0) < 6) return
-      cleanup()
-      const picked = sel.has(path) ? selItems() : [{ path, name: ent.name, dir: ent.dir }]
-      if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path }
-      dragging.current = true
-      setInfo(`正在拖出 ${picked.length} 项，放到资源管理器或桌面里就开始复制…`)
-      api.ssh_drag(alias, picked).then((r: any) => { if (!r?.ok) setInfo(r?.error || '拖出失败') }).finally(() => { dragging.current = false })
+    let started = false, hover = '', hoverT = 0
+    const picked: Item[] = sel.has(path) ? selItems() : [{ path, name: ent.name, dir: ent.dir }]
+    const finish = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); dragging.current = false; document.body.style.cursor = '' }
+    const dirAt = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y)?.closest('[data-exrow]') as HTMLElement | null
+      if (!el || !box.current?.contains(el)) return ''
+      const p = el.getAttribute('data-exrow') || ''
+      return el.getAttribute('data-dir') === '1' ? p : parentOf(p)       // 悬停在文件上 = 它所在的文件夹
     }
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', cleanup)
+    const move = (m: MouseEvent) => {
+      if (!started) {
+        if (Math.hypot(m.clientX - x0, m.clientY - y0) < 6) return
+        started = true; dragging.current = true
+        if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path }
+        document.body.style.cursor = 'grabbing'
+      }
+      if (m.clientX < 0 || m.clientY < 0 || m.clientX >= window.innerWidth || m.clientY >= window.innerHeight) {
+        // 拖出窗口：交给系统拖放（此时左键还按着）
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); document.body.style.cursor = ''
+        setInfo(`正在拖出 ${picked.length} 项，放到资源管理器或桌面里就开始复制…`)
+        api.ssh_drag(alias, picked).then((r: any) => { if (!r?.ok) setInfo(r?.error || '拖出失败') }).finally(() => { dragging.current = false })
+        return
+      }
+      const d = dirAt(m.clientX, m.clientY)
+      if (d !== hover) {
+        hover = d; setDropOn(d); clearTimeout(hoverT)
+        if (d && d !== root && !open.has(d)) hoverT = window.setTimeout(() => toggle(d), 700)
+      }
+    }
+    const up = () => {
+      const wasStarted = started, dest = hover
+      finish()
+      if (wasStarted) {
+        suppressClick.current = true; setTimeout(() => { suppressClick.current = false }, 0)
+        if (dest) moveTo(picked, dest)
+      }
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
+  const suppressClick = useRef(false)
 
   const clickRow = (e: React.MouseEvent, path: string, ent: Ent) => {
+    if (suppressClick.current) return
     box.current?.focus()
     if (e.ctrlKey || e.metaKey) { setSel((s) => { const n = new Set(s); n.has(path) ? n.delete(path) : n.add(path); return n }); anchor.current = path; return }
     if (e.shiftKey && anchor.current) {
@@ -252,7 +301,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
         <Tooltip title="上传文件夹"><span><IconButton size="small" disabled={!root || !!prog} onClick={async () => { const d = await api.pick_folder(); if (d) upload([d]) }}><DriveFolderUploadOutlined sx={{ fontSize: 17 }} /></IconButton></span></Tooltip>
         <Tooltip title="刷新"><IconButton size="small" disabled={!root} onClick={() => open.forEach((p) => refresh(p))}><RefreshRounded sx={{ fontSize: 17 }} /></IconButton></Tooltip>
       </Box>
-      {root && <Box onClick={() => toggle(root)} sx={{ display: 'flex', alignItems: 'center', px: 0.8, height: 24, flexShrink: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, '&:hover': { bgcolor: 'action.hover' } }}>
+      {root && <Box data-exrow={root} data-dir="1" onClick={() => toggle(root)} sx={{ outline: dropOn === root ? '1px solid' : 'none', outlineColor: 'primary.main', outlineOffset: -1, display: 'flex', alignItems: 'center', px: 0.8, height: 24, flexShrink: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, '&:hover': { bgcolor: 'action.hover' } }}>
         {open.has(root) ? <ExpandMoreRounded sx={{ fontSize: 18 }} /> : <ChevronRightRounded sx={{ fontSize: 18 }} />}<span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{baseOf(root).toUpperCase()}</span>
       </Box>}
       {prog ? <LinearProgress variant={prog.total ? 'determinate' : 'indeterminate'} value={pct} sx={{ height: 2, flexShrink: 0 }} />
@@ -260,9 +309,9 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
         {err && <Typography sx={{ m: 1, fontSize: 12.5, color: 'text.secondary' }}>{err}</Typography>}
         {rows.map(({ path, ent, depth }) => (
-          <Box key={path} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}
+          <Box key={path} data-exrow={path} data-dir={ent.dir ? '1' : '0'} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); box.current?.focus(); if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path } setMenu({ x: e.clientX, y: e.clientY }) }}
-            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
+            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', outline: dropOn && ent.dir && dropOn === path ? '1px solid' : 'none', outlineColor: 'primary.main', outlineOffset: -1, '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
               opacity: CLIP?.cut && CLIP.alias === alias && CLIP.items.some((i) => i.path === path) ? 0.5 : 1 }}>
             <Box sx={{ width: 18, flexShrink: 0, display: 'flex' }}>{ent.dir ? (open.has(path) ? <ExpandMoreRounded sx={{ fontSize: 18 }} /> : <ChevronRightRounded sx={{ fontSize: 18 }} />) : null}</Box>
             {ent.dir ? <FolderRounded sx={{ fontSize: 17, mr: 0.7, color: 'primary.main', flexShrink: 0 }} /> : <FileIcon name={ent.name} dark={dark} />}

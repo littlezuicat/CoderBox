@@ -26,7 +26,7 @@ function Splitter({ dir, onDrag }: { dir: 'v' | 'h'; onDrag: (d: number) => void
 
 export default function IdePane({ alias, active, dark, info, renderTerm, onResult }: {
   alias: string; active: boolean; dark: boolean; info?: SysInfo | null
-  renderTerm: (visible: boolean, collapse: () => void) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
+  renderTerm: (visible: boolean, collapse: () => void, tabsSlot: HTMLElement | null) => React.ReactNode; onResult?: (alias: string, ok: boolean, conn: boolean, err?: string) => void
 }) {
   const [exW, setExW] = useState(250)
   const [dockH, setDockH] = useState(280)
@@ -34,6 +34,7 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
   const [req, setReq] = useState<OpenReq>(null)
   const n = useRef(0)
   const wrap = useRef<HTMLDivElement>(null)
+  const [tabsEl, setTabsEl] = useState<HTMLElement | null>(null)       // 终端会话标签放在面板标题行的右侧
 
   const termVisible = active && dockOpen
 
@@ -54,10 +55,11 @@ export default function IdePane({ alias, active, dark, info, renderTerm, onResul
           <Box sx={{ flex: '0 0 30px', display: 'flex', alignItems: 'center', px: 0.5 }}>
             <Box onClick={() => setDockOpen(true)} sx={{ px: 1.4, height: '100%', display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, borderBottom: 2, borderColor: 'primary.main' }}>终端</Box>
             <Box sx={{ flex: 1 }} />
+            <Box ref={setTabsEl} sx={{ display: 'flex', alignItems: 'center', minWidth: 0, maxWidth: '70%' }} />
             <Tooltip title={dockOpen ? '收起面板' : '展开面板'}><IconButton size="small" onClick={() => setDockOpen((o) => !o)}>{dockOpen ? <KeyboardArrowDownRounded fontSize="small" /> : <KeyboardArrowUpRounded fontSize="small" />}</IconButton></Tooltip>
           </Box>
           <Box sx={{ flex: 1, minHeight: 0, position: 'relative', display: dockOpen ? 'block' : 'none' }}>
-            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible, () => setDockOpen(false))}</Box>
+            <Box sx={{ position: 'absolute', inset: 0 }}>{renderTerm(termVisible, () => setDockOpen(false), tabsEl)}</Box>
           </Box>
         </Box>
       </Box>

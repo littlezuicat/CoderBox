@@ -635,7 +635,7 @@ function TermSession({ alias, visible, onResult }: { alias: string; visible: boo
 }
 
 const MAX_SESSIONS = 8
-function TermPane({ alias, active, onResult, slot, onEmpty }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null; onEmpty?: () => void }) {
+function TermPane({ alias, active, onResult, slot, onEmpty, tabsSlot }: { alias: string; active: boolean; onResult?: PaneResult; slot?: HTMLElement | null; onEmpty?: () => void; tabsSlot?: HTMLElement | null }) {
   const [list, setList] = useState<number[]>([1])
   const [cur, setCur] = useState(1)
   const next = useRef(2)
@@ -675,9 +675,8 @@ function TermPane({ alias, active, onResult, slot, onEmpty }: { alias: string; a
       </Box>
     )
   }
-  return (
-    <Box sx={{ display: active ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.8, overflowX: 'auto', flexShrink: 0 }}>
+  const strip = (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: tabsSlot ? 0 : 0.8, overflowX: 'auto', flexShrink: 1, minWidth: 0 }}>
         {list.map((k) => (
           <Box key={k} onClick={() => setCur(k)} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2, pl: 1.3, pr: 0.4, py: 0.3, borderRadius: 1.5, cursor: 'pointer', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: k === cur ? 700 : 400,
             bgcolor: k === cur ? 'action.selected' : 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}>
@@ -687,6 +686,11 @@ function TermPane({ alias, active, onResult, slot, onEmpty }: { alias: string; a
         ))}
         <Tooltip title={list.length >= MAX_SESSIONS ? `最多 ${MAX_SESSIONS} 个会话` : '新建会话（再开一个命令行）'}><span><IconButton size="small" disabled={list.length >= MAX_SESSIONS} onClick={add}><AddRounded fontSize="small" /></IconButton></span></Tooltip>
       </Box>
+  )
+  return (
+    <Box sx={{ display: active ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {!tabsSlot && strip}
+      {tabsSlot && active && createPortal(strip, tabsSlot)}
       <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {list.map((k) => <TermSession key={k} alias={alias} visible={active && k === cur} onResult={onResult} />)}
       </Box>
@@ -1029,7 +1033,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
               <Box sx={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                 {ideHosts.filter((a) => hosts.some((h) => h.alias === a)).map((a) => (
                   <IdePane key={a} alias={a} active={!!active && a === sel} dark={dark} info={a === sel ? sysInfo : null}
-                    renderTerm={(v, collapse) => <TermPane alias={a} active={v} onResult={paneResult} onEmpty={collapse} />}
+                    renderTerm={(v, collapse, tabsSlot) => <TermPane alias={a} active={v} onResult={paneResult} onEmpty={collapse} tabsSlot={tabsSlot} />}
                     onResult={(al, ok, conn, e) => paneResult(al, ok, conn, e)} />
                 ))}
               </Box>

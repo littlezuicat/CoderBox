@@ -198,6 +198,9 @@ class Api:
         c = litrans.get_cfg()
         if sys.platform != "win32":
             return
+        if not litrans.ENABLED:                          # 功能暂时关闭：不注册热键（以前开过的也要撤掉）
+            self._lit_hk.stop()
+            return
         if c["hotkey_on"]:
             self._lit_hk.start(c["hotkey"])
             litrans.translator.warmup()

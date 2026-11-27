@@ -138,6 +138,7 @@ es`，不随程序启动、不进负载包。
 - 本机经 Clash 虚拟网卡时，对任何远端端口 `connect` 都会先成功，“端口开着”的探测结果不可信，要读到真实 banner 才算数。
 
 ## 文献翻译（工具页「文献」卡片，2026-11-27）
+- **2026-11-27 用户要求暂时关闭、不接入发布**：2.0.71/2.0.72 曾发布过，之后用总开关关掉了——`litrans.ENABLED = False`（不注册热键、已开过的也会撤掉）+ `online.tsx` 的 `LIT_ENABLED = false`（卡片不显示）。代码和文档都留着；恢复就把这两个开关改成 True。以下是功能本身的说明。
 - 移植自开源项目 FlashTrans（chai1220，MIT，许可证放在 `web\LICENSE-FlashTrans-MIT`）的**在线 API 路径**：输入即译工作台 + 全局划词热键 + 鼠标旁弹窗。**没移植**本地模型（NLLB/GGUF）、截图 OCR、对话、F2 打字弹窗。用户自己填接口地址/模型/密钥（默认 `api.deepseek.com` / `deepseek-flash`）。
 - 后端 `py\majing\core\litrans.py`：`Translator`（requests.Session 复用连接、DeepSeek 域名带 `thinking:disabled`、SSE 按字节切行再转 UTF-8、LRU 缓存 200 条、失败重试一次、warmup 预热 TLS）；`Hotkey`（独立线程 RegisterHotKey + 消息循环）；`grab_selection`（keybd_event 模拟 Ctrl+C，用 `GetClipboardSequenceNumber` 判断复制完成）；弹窗定位/置顶/不抢焦点的 ctypes 辅助（**用自己的 `ctypes.WinDLL` 句柄**，不和别处的 user32 函数对象互相覆盖 argtypes）。
 - **密钥**：用 `account._protect`（DPAPI）加密后存在设置文件的 `lit_key`，`app_info` 不把它发给前端；前端只知道 `has_key`。别把用户在聊天里贴的密钥写进任何文件。

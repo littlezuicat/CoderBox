@@ -22,16 +22,19 @@ const LINKS: [string, string, string, string, React.ReactNode, string][] = [
   ['网页版文件快传', 'www.zuicat.cn/file', '手机和电脑之间互传，凭取件码下载。', 'https://www.zuicat.cn/file/', <SendOutlined />, 'secondary'],
 ]
 
+// 文献翻译暂时关闭（不接入发布）：恢复时改成 true，并把 py/majing/core/litrans.py 的 ENABLED 也改成 True
+const LIT_ENABLED = false
+
 export default function OnlinePage() {
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const [view, setView] = useState<'list' | 'lit'>('list')
   const cardSx = { display: 'flex', gap: 1.5, p: 2, borderRadius: 2, cursor: 'pointer', bgcolor: dark ? '#282a36' : '#ffffff', '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.07) } }
-  if (view === 'lit') return <BasePage title="文献翻译"><LiteraturePage onBack={() => setView('list')} /></BasePage>
+  if (LIT_ENABLED && view === 'lit') return <BasePage title="文献翻译"><LiteraturePage onBack={() => setView('list')} /></BasePage>
   return (
     <BasePage title="在线工具">
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
-        <Box onClick={() => setView('lit')} sx={cardSx}>
+        {LIT_ENABLED && <Box onClick={() => setView('lit')} sx={cardSx}>
           <Box sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0, bgcolor: alpha(theme.palette.primary.main, 0.12), color: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><LiteratureIcon /></Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 700, fontSize: 15 }}>文献</Typography>
@@ -39,7 +42,7 @@ export default function OnlinePage() {
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>读文献用：输入即译，或在任何程序里划词按热键，译文弹在鼠标旁边。用你自己的翻译接口。</Typography>
           </Box>
           <ChevronRightRounded fontSize="small" sx={{ color: 'text.secondary' }} />
-        </Box>
+        </Box>}
         {LINKS.map(([t, h, d, url, icon, color]) => (
           <Box key={t} onClick={() => api.open_url(url)} sx={{ display: 'flex', gap: 1.5, p: 2, borderRadius: 2, cursor: 'pointer', bgcolor: dark ? '#282a36' : '#ffffff', '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.07) } }}>
             <Box sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0, bgcolor: alpha((theme.palette as any)[color].main, 0.12), color: `${color}.main`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</Box>

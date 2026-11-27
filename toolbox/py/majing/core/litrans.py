@@ -23,6 +23,9 @@ from majing.settings import settings
 
 log = logging.getLogger("majing.litrans")
 
+# 总开关：暂时关闭文献翻译（不注册热键、界面里不显示入口）。要恢复就改成 True（同时改 web/src/pages/online.tsx 里的 LIT_ENABLED）。
+ENABLED = False
+
 LANGS = [  # (代码, 中文名, 英文名)——英文名喂给模型比语种代码可靠
     ("zh", "中文（简体）", "Chinese (Simplified)"), ("zh-Hant", "中文（繁体）", "Chinese (Traditional)"), ("en", "英语", "English"),
     ("ja", "日语", "Japanese"), ("ko", "韩语", "Korean"), ("fr", "法语", "French"), ("de", "德语", "German"), ("es", "西班牙语", "Spanish"),

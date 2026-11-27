@@ -9,7 +9,7 @@ import DriveFolderUploadOutlined from '@mui/icons-material/DriveFolderUploadOutl
 import NoteAddOutlined from '@mui/icons-material/NoteAddOutlined'
 import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined'
 import RefreshRounded from '@mui/icons-material/RefreshRounded'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, LinearProgress, ListItemText, Menu, MenuItem, TextField, Tooltip, Typography, useTheme } from '@mui/material'
+import { alpha, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, LinearProgress, ListItemText, Menu, MenuItem, TextField, Tooltip, Typography, useTheme } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
@@ -101,6 +101,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   // 按住文件/文件夹拖动：松在某个文件夹上 = 移动到那里；拖出窗口外（资源管理器、桌面）= 下载
   // （虚拟文件：拖的时候不下载，放下那一刻才从服务器读）。拖动中悬停的文件夹高亮，悬停久了会自动展开。
   const [dropOn, setDropOn] = useState('')
+  const [ghost, setGhost] = useState<null | { x: number; y: number; name: string; n: number; dir: boolean; paths: Set<string> }>(null)      // 跟着鼠标的“拿起来”标签
   const dragging = useRef(false)
   const moveTo = async (picked: Item[], dest: string) => {
     const groups = groupByDir(picked)
@@ -125,7 +126,7 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
     const x0 = e.clientX, y0 = e.clientY
     let started = false, hover = '', hoverT = 0
     const picked: Item[] = sel.has(path) ? selItems() : [{ path, name: ent.name, dir: ent.dir }]
-    const finish = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); dragging.current = false; document.body.style.cursor = '' }
+    const finish = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); setGhost(null); dragging.current = false; document.body.style.cursor = '' }
     const dirAt = (x: number, y: number) => {
       const el = document.elementFromPoint(x, y)?.closest('[data-exrow]') as HTMLElement | null
       if (!el || !box.current?.contains(el)) return ''
@@ -141,11 +142,12 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
       }
       if (m.clientX < 0 || m.clientY < 0 || m.clientX >= window.innerWidth || m.clientY >= window.innerHeight) {
         // 拖出窗口：交给系统拖放（此时左键还按着）
-        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); document.body.style.cursor = ''
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); clearTimeout(hoverT); setDropOn(''); setGhost(null); document.body.style.cursor = ''
         setInfo(`正在拖出 ${picked.length} 项，放到资源管理器或桌面里就开始复制…`)
         api.ssh_drag(alias, picked).then((r: any) => { if (!r?.ok) setInfo(r?.error || '拖出失败') }).finally(() => { dragging.current = false })
         return
       }
+      setGhost({ x: m.clientX, y: m.clientY, name: ent.name, n: picked.length, dir: ent.dir, paths: new Set(picked.map((i) => i.path)) })
       const d = dirAt(m.clientX, m.clientY)
       if (d !== hover) {
         hover = d; setDropOn(d); clearTimeout(hoverT)
@@ -293,6 +295,14 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
   return (
     <Box ref={box} tabIndex={0} onKeyDown={onKey} sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, userSelect: 'none', outline: 'none' }}
       onContextMenu={(e) => { e.preventDefault(); setSel(new Set()); if (CLIP) setMenu({ x: e.clientX, y: e.clientY }) }}>
+      {ghost && (
+        <Box sx={{ position: 'fixed', left: ghost.x + 14, top: ghost.y + 10, zIndex: 3000, pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 0.7, px: 1, height: 26, borderRadius: 1.5, fontSize: 13, maxWidth: 260,
+          bgcolor: 'background.paper', color: 'text.primary', border: 1, borderColor: 'primary.main', boxShadow: 4 }}>
+          {ghost.dir ? <FolderRounded sx={{ fontSize: 17, color: 'primary.main', flexShrink: 0 }} /> : <FileIcon name={ghost.name} dark={dark} />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ghost.name}</span>
+          {ghost.n > 1 && <Box component="span" sx={{ ml: 0.3, px: 0.7, minWidth: 18, textAlign: 'center', borderRadius: 9, bgcolor: 'primary.main', color: 'primary.contrastText', fontSize: 11.5, fontWeight: 700, lineHeight: '18px' }}>{ghost.n}</Box>}
+        </Box>
+      )}
       <Box sx={{ display: 'flex', alignItems: 'center', px: 1, height: 34, flexShrink: 0 }}>
         <Typography sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.5, color: 'text.secondary', flex: 1 }}>资源管理器</Typography>
         <Tooltip title="新建文件"><IconButton size="small" disabled={!root} onClick={() => setPrompt({ kind: 'file', dir: single?.dir ? single.path : single ? parentOf(single.path) : root, text: '' })}><NoteAddOutlined sx={{ fontSize: 17 }} /></IconButton></Tooltip>
@@ -311,8 +321,8 @@ export default function Explorer({ alias, active, onOpen, onResult }: { alias: s
         {rows.map(({ path, ent, depth }) => (
           <Box key={path} data-exrow={path} data-dir={ent.dir ? '1' : '0'} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); box.current?.focus(); if (!sel.has(path)) { setSel(new Set([path])); anchor.current = path } setMenu({ x: e.clientX, y: e.clientY }) }}
-            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', outline: dropOn && ent.dir && dropOn === path ? '1px solid' : 'none', outlineColor: 'primary.main', outlineOffset: -1, '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
-              opacity: CLIP?.cut && CLIP.alias === alias && CLIP.items.some((i) => i.path === path) ? 0.5 : 1 }}>
+            sx={{ display: 'flex', alignItems: 'center', height: 24, pl: `${6 + depth * 12}px`, pr: 1, cursor: 'pointer', userSelect: 'none', fontSize: 13, bgcolor: sel.has(path) ? 'action.selected' : 'transparent', outline: dropOn && ent.dir && dropOn === path ? '1px solid' : 'none', ...(dropOn && ent.dir && dropOn === path ? { bgcolor: (th: any) => alpha(th.palette.primary.main, 0.16) } : {}), outlineColor: 'primary.main', outlineOffset: -1, '&:hover': { bgcolor: sel.has(path) ? 'action.selected' : 'action.hover' },
+              opacity: ghost?.paths.has(path) || (CLIP?.cut && CLIP.alias === alias && CLIP.items.some((i) => i.path === path)) ? 0.5 : 1 }}>
             <Box sx={{ width: 18, flexShrink: 0, display: 'flex' }}>{ent.dir ? (open.has(path) ? <ExpandMoreRounded sx={{ fontSize: 18 }} /> : <ChevronRightRounded sx={{ fontSize: 18 }} />) : null}</Box>
             {ent.dir ? <FolderRounded sx={{ fontSize: 17, mr: 0.7, color: 'primary.main', flexShrink: 0 }} /> : <FileIcon name={ent.name} dark={dark} />}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ent.name}</span>

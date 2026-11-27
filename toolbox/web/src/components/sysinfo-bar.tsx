@@ -1,5 +1,5 @@
 // 主机的系统信息：感叹号里是 SSH 地址和系统、CPU 型号；一行是 CPU / 内存 / 硬盘 / 数据卷的占用。
-// 结果会缓存（切走再切回来不用重新读）；超过 5 分钟才在打开时后台刷新一次，也可以手动点刷新。悬停里的每一行点一下就能复制。
+// 结果会缓存（切走再切回来不用重新读）；超过 5 分钟才在打开时后台刷新一次，也可以手动点刷新。
 import CloudOutlined from '@mui/icons-material/CloudOutlined'
 import DeveloperBoardRounded from '@mui/icons-material/DeveloperBoardRounded'
 import InfoOutlined from '@mui/icons-material/InfoOutlined'
@@ -47,24 +47,16 @@ function writeCache(alias: string, info: SysInfo) {
   try { localStorage.setItem(KEY(alias), JSON.stringify(info)) } catch { /* 存不下就只留内存里 */ }
 }
 
-// 悬停提示里的每一行：点一下复制这一行
+// 悬停提示：一行一行的文字（不带复制）
 function CopyLines({ lines }: { lines: string[] }) {
-  const [hit, setHit] = useState(-1)
   return (
-    <Box sx={{ fontSize: 12, lineHeight: 1.7, minWidth: 200 }}>
-      {lines.map((l, i) => (
-        <Box key={i}
-          onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(l); setHit(i); setTimeout(() => setHit((h) => (h === i ? -1 : h)), 1200) }}
-          sx={{ px: 0.8, py: 0.1, mx: -0.8, borderRadius: 1, cursor: 'copy', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, '& .cp': { opacity: 0 }, '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' }, '&:hover .cp': { opacity: 0.7 } }}>
-          <span style={{ whiteSpace: 'pre' }}>{l}</span>
-          <span className="cp" style={{ flexShrink: 0, fontSize: 11 }}>{hit === i ? '已复制' : '复制'}</span>
-        </Box>
-      ))}
+    <Box sx={{ fontSize: 12, lineHeight: 1.7 }}>
+      {lines.map((l, i) => <Box key={i} sx={{ whiteSpace: 'pre' }}>{l}</Box>)}
     </Box>
   )
 }
 
-// 感叹号：悬停看 SSH 连接信息和系统信息（系统、架构、CPU 型号、更新时间），每行可点复制
+// 感叹号：悬停看 SSH 连接信息和系统信息（系统、架构、CPU 型号、更新时间）
 export function SysInfoBadge({ info, addr }: { info: SysInfo | null; addr: string }) {
   const lines = [`SSH  ${addr}`]
   if (info?.ok && info.name) {
@@ -87,39 +79,35 @@ export function statEntries(info: SysInfo | null): Entry[] {
   const linux = info.family === 'linux', cores = info.cpu?.cores || 0
   const out: Entry[] = []
   const ic = { fontSize: 14, opacity: 0.8, mr: 0.4, verticalAlign: '-2px' }
-  out.push({ id: 'cpu', icon: <MemoryRounded sx={ic} />, label: 'CPU', text: `${cores ? cores + (linux ? ' 核 ' : ' 线程 ') : ''}${fmtPct(info.cpu?.usage || 0)}%`,
-    lines: [info.cpu?.model || 'CPU 型号未知', `${cores} ${linux ? '核' : '线程'}`, `占用 ${fmtPct(info.cpu?.usage || 0)}%`] })
+  out.push({ id: 'cpu', icon: <MemoryRounded sx={ic} />, label: 'CPU', text: `${cores ? cores + (linux ? ' 核 ' : ' 线程 ') : ''}${fmtPct(info.cpu?.usage || 0)}%`, lines: [] })
   const mu = info.mem?.used || 0, mt = info.mem?.total || 0
-  out.push({ id: 'mem', icon: <DeveloperBoardRounded sx={ic} />, label: '内存', text: `${gib(mu)}/${gib(mt)} GB ${fmtPct(pct(mu, mt))}%`,
-    lines: [`总量 ${gib(mt)} GB`, `已用 ${gib(mu)} GB${linux ? '（不含可回收的缓存）' : ''}`] })
+  out.push({ id: 'mem', icon: <DeveloperBoardRounded sx={ic} />, label: '内存', text: `${gib(mu)}/${gib(mt)} GB ${fmtPct(pct(mu, mt))}%`, lines: [] })
   const ds = info.disks || []
   const local = ds.filter((d) => d.kind !== 'cloud'), cloud = ds.filter((d) => d.kind === 'cloud')
-  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', d.mount, `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`].join('  ')
+  const row = (d: NonNullable<SysInfo['disks']>[number]) => [d.kind === 'system' ? '系统盘' : d.kind === 'cloud' ? '云盘' : '挂载盘', d.kind === 'system' && d.mount === '/' ? '' : d.mount, `${gib(d.used)}/${gib(d.total)} GB`, `${fmtPct(pct(d.used, d.total))}%`].filter(Boolean).join('  ')
   if (local.length) {
     const lt = local.reduce((a, d) => a + d.total, 0), lu = local.reduce((a, d) => a + d.used, 0)
     const lines = local.map(row)
-    if (local.some((d) => d.nominal)) lines.push(`容器里读不到实际分到多少，按每张显卡 100 GB 算（${info.gpus || 0} 张 = ${gib((info.gpus || 2) * 100 * 1073741824)} GB）`)
     if (info.container) lines.push('实例销毁后自动回收')
     out.push({ id: 'disk', icon: <StorageRounded sx={ic} />, label: '磁盘', text: `${gib(lu)}/${gib(lt)} GB ${fmtPct(pct(lu, lt))}%`, lines })
   }
   if (cloud.length) {
     const ct = cloud.reduce((a, d) => a + d.total, 0), cu = cloud.reduce((a, d) => a + d.used, 0)
-    out.push({ id: 'cloud', icon: <CloudOutlined sx={ic} />, label: '云盘', text: `${gib(cu)}/${gib(ct)} GB ${fmtPct(pct(cu, ct))}%`, lines: [...cloud.map(row), '云盘单独保存，不随实例销毁'] })
+    out.push({ id: 'cloud', icon: <CloudOutlined sx={ic} />, label: '云盘', text: `${gib(cu)}/${gib(ct)} GB ${fmtPct(pct(cu, ct))}%`, lines: [...cloud.map(row), '实例销毁后不回收'] })
   }
   return out
 }
 
-// 底栏里的一行：图标 + 名称 + 数字，不画占用条；悬停看详情（点一行可复制）
+// 底栏里的一行：图标 + 名称 + 数字，不画占用条；悬停看详情
 export function StatStrip({ info }: { info: SysInfo | null }) {
   const es = statEntries(info)
   if (!es.length) return null
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.2, flexShrink: 0 }}>
-      {es.map((e) => (
-        <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.lines} />}>
-          <span style={{ whiteSpace: 'nowrap', cursor: 'default' }}>{e.icon}{e.label} {e.text}</span>
-        </Tooltip>
-      ))}
+      {es.map((e) => {
+        const body = <span style={{ whiteSpace: 'nowrap', cursor: 'default' }}>{e.icon}{e.label} {e.text}</span>
+        return e.lines.length ? <Tooltip key={e.id} placement="top-end" title={<CopyLines lines={e.lines} />}>{body}</Tooltip> : <span key={e.id}>{body}</span>
+      })}
     </Box>
   )
 }

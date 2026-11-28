@@ -575,7 +575,12 @@ class Monitor:
             self._apply(rec, a, now)
             rec["error"] = a["error"]
             fr = a["frac"]
-            if a["finished"] or (fr is not None and fr >= 0.985):
+            evalrun = logprog.is_eval_cmd(rec["cmd"]) and not a["error"] and not a.get("interrupted")
+            if a["finished"] and evalrun:             # 评测 / 推理脚本：日志里有结果汇总、没报错，就是正常跑完
+                rec["status"] = "done"
+                rec["frac"] = 1.0
+                rec["label"] = "评测完成"
+            elif a["finished"] or (fr is not None and fr >= 0.985):
                 rec["status"] = "done"
                 rec["frac"] = 1.0 if (fr is None or fr >= 0.985) else fr
             elif a["error"]:

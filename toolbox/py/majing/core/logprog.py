@@ -46,6 +46,14 @@ RE_TS = [
 ]
 RE_ERR = re.compile(r"Traceback \(most recent call last\)|CUDA out of memory|OutOfMemoryError|RuntimeError:|\bKilled\b|Segmentation fault|NCCL (?:error|Error)|\bAssertionError|\bKeyError|\bValueError|\bFileNotFoundError|\bImportError|\bModuleNotFoundError|Error:")
 RE_DONE = re.compile(r"training (?:finished|complete[d]?|done|ended)|finished training|train(?:ing)? (?:is )?(?:over|finish)|end of training|all (?:done|epochs? finished)|optimization finished|done training", re.I)
+RE_EVAL_DONE = re.compile(r"(?:test|eval(?:uation)?|inference|testing)\s+(?:finished|complete[d]?|done)|(?:test|eval(?:uation)?|overall|final)\s+(?:averages?|results?|summary|metrics)\b|\baverages?\s*[:=]|\bsummary\b", re.I)   # 仅评测脚本用
+RE_INTR = re.compile(r"KeyboardInterrupt|\bTerminated\b|\bInterrupted\b|Aborted \(core dumped\)")        # 被人中断
+RE_EVAL_CMD = re.compile(r"(?:^|[\s/\\])[\w.\-]*(?:eval|evaluate|test|infer|inference|predict|benchmark|metric)[\w.\-]*\.py\b|\.py\s+(?:eval|evaluate|test|infer|predict)\b", re.I)
+
+
+def is_eval_cmd(cmd):
+    """命令是不是评测 / 推理脚本（跑完就退出，没有“总轮数”，不能按训练那套判进度）。只看脚本名和子命令。"""
+    return bool(RE_EVAL_CMD.search(cmd or ""))
 RE_VAL = re.compile(r"valid|\bval\b|evaluat|\btest(?:ing)?\b|# *validation|psnr|ssim|\bmetric", re.I)
 RE_SAVE = re.compile(r"sav(?:ing|ed)\b.{0,40}(?:model|ckpt|checkpoint|state|weight|net|\.pth|\.pt\b|\.safetensors)|checkpoint.{0,20}sav", re.I)
 RE_INIT = re.compile(r"\bload(?:ing|ed)\b|\bbuild(?:ing)?\b|prepar|dataset|data ?loader|total params|#params|number of param|parameters|initiali[sz]", re.I)
@@ -270,6 +278,11 @@ def analyze(head, tail, cmd="", cfg_text="", now=None, mtime=None, started=None)
             break
     out["error"] = em or ""
     out["finished"] = bool(RE_DONE.search("\n".join(lines[-40:])))
+    if not out["finished"] and is_eval_cmd(cmd):
+        out["finished"] = bool(RE_EVAL_DONE.search("\n".join(lines[-8:])))
+    out["interrupted"] = bool(RE_INTR.search("\n".join(lines[-40:])))
+    if out["interrupted"] and is_eval_cmd(cmd):
+        out["finished"] = False                   # 评测被人中断，不算跑完
     last_prog_i = prog[-1].i if prog else -1
     stage = ""
     for ln_i in range(len(lines) - 1, max(-1, len(lines) - 25), -1):

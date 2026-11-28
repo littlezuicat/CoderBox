@@ -397,8 +397,6 @@ def analyze(head, tail, cmd="", cfg_text="", now=None, mtime=None, started=None)
             out["label"] += "（epoch %s）" % (int(cur_e) if not cur_e_float else cur_e)
     elif mode == "epoch":
         out["label"] = "epoch %s / %s" % (int(cur_e) if not cur_e_float else cur_e, epoch_tot)
-        if cur_inner is not None and not cur_e_float:
-            out["label"] += "（本轮 %d%%）" % round(cur_inner * 100)
     else:
         n, t = (lastr.tq[0], lastr.tq[1]) if lastr.tq else (lastr.batch[0], lastr.batch[1])
         if totals.get("epoch") and t in (totals["epoch"], totals["epoch"] + 1):          # 进度条的总数正好等于总 epoch：这是整个训练的进度条（DehazeFormer 一类）

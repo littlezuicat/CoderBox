@@ -26,6 +26,7 @@ log = logging.getLogger("majing.exp")
 
 INTERVAL = 60                 # 后台轮询间隔（秒）
 MIN_SECS = 120                # 跑满这么久才算“实验”（避开几十秒的测试/推理脚本）；或者连续两次采样都在
+NOTE_V = 2                  # 一句话说明的版本：提示词改了就加一，旧说明会重新生成一次
 ABSENT_N = 2                  # 连续几次没看到进程才算结束
 MAX_ITEMS = 600
 TAIL_BYTES = 200000
@@ -586,7 +587,7 @@ class Monitor:
 
     # ---------------------------------------------------------------- 一句话实验说明（Haiku，提取成功一次就不再提取）
     def _want_note(self, rec, mem):
-        if rec.get("note") or self._mode() == "off":
+        if rec.get("note_v") == NOTE_V or self._mode() == "off":
             return
         now = time.time()
         if mem.get("note_q") or now < mem.get("note_next", 0) or mem.get("note_tries", 0) >= 8:
@@ -610,14 +611,14 @@ class Monitor:
             rec = next((r for r in self.items if r["id"] == rid), None)
         mem = self._mem.setdefault(rid, {})
         mode = self._mode()
-        if not rec or rec.get("note") or mode == "off":
+        if not rec or rec.get("note_v") == NOTE_V or mode == "off":
             mem["note_q"] = False
             return
         ok, text, kind = expnote.ask(ctx, mode)
         mem["note_q"] = False
         if ok:
             with self._lock:
-                rec["note"] = text
+                rec["note"], rec["note_v"] = text, NOTE_V
                 self.ai = {"ok": True, "error": "", "kind": ""}
                 self._save()
             log.info("实验说明 %s：%s", rec["name"], text)

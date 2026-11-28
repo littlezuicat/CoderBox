@@ -25,8 +25,8 @@ type Ai = { mode: 'off' | 'haiku' | 'gpt'; ok: boolean | null; error: string; ki
 type Tab = 'run' | 'end'
 type SortKey = 'alias' | 'name' | 'frac' | 'start' | 'end'
 
-const COLS = '92px 232px minmax(190px,1.4fr) minmax(150px,1fr) 52px 124px 124px'      // 主机 | 显卡 | 实验 | 进度 | % | 开始 | 预计结束（已结束页：结束）
-const MIN_W = 1000
+const COLS = '92px 140px 122px minmax(240px,2.4fr) minmax(104px,0.7fr) 50px 118px 118px'      // 主机 | 显卡 | 利用率·显存 | 实验（一句话）| 进度 | % | 开始 | 预计结束（已结束页：结束）
+const MIN_W = 1090
 const AI_NAMES: Record<string, string> = { off: '关闭', haiku: 'Haiku', gpt: 'GPT-6-Luna' }
 const TASK_COLORS = ['#378ADD', '#1D9E75', '#BA7517', '#7F77DD', '#D4537E', '#639922']
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -38,22 +38,31 @@ const clock = (t: number) => {
 }
 const shortName = (n: string) => n.replace(/^NVIDIA\s+(GeForce\s+)?/i, '')
 
-// 显卡列：每张卡一行 = GPU0 胶囊 + 型号 + 利用率 + 显存（实时数据来自最近一次扫描；已结束的记录只有编号和型号）
+// 显卡两列：每张卡一行 —— 第一列 GPU0 胶囊 + 型号，第二列 利用率 · 显存（实时数据来自最近一次扫描；已结束的记录没有第二列）
 function GpuCol({ e, host, color }: { e: Exp; host?: { gpus: HostGpu[] }; color: string }) {
-  const running = e.status === 'running'
   const model = shortName(e.gpu_model || host?.gpus?.[0]?.name || '')
   if (!e.gpus.length) return <Typography noWrap sx={{ fontSize: 12, color: 'text.disabled' }}>GPU ?{model ? ` · ${model}` : ''}</Typography>
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
       {e.gpus.map((g) => {
-        const h = running ? host?.gpus?.find((x) => x.index === g) : undefined
         return (
           <Box key={g} sx={{ display: 'flex', alignItems: 'center', gap: 0.8, whiteSpace: 'nowrap' }}>
             <Box component="span" sx={{ fontSize: 11, fontWeight: 600, lineHeight: '17px', px: 0.9, borderRadius: 9, color, bgcolor: alpha(color, 0.14), border: `0.5px solid ${alpha(color, 0.5)}` }}>GPU{g}</Box>
-            <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{model}</Typography>
-            {h && <Typography component="span" sx={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', ml: 'auto' }}>{h.util}% · {gb(h.mem_used)}/{gb(h.mem_total)}G</Typography>}
+            <Typography component="span" noWrap sx={{ fontSize: 12, lineHeight: '17px', color: 'text.secondary' }}>{model}</Typography>
           </Box>
         )
+      })}
+    </Box>
+  )
+}
+
+function GpuUse({ e, host }: { e: Exp; host?: { gpus: HostGpu[] } }) {
+  if (e.status !== 'running' || !e.gpus.length) return <span />
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+      {e.gpus.map((g) => {
+        const h = host?.gpus?.find((x) => x.index === g)
+        return <Typography key={g} noWrap sx={{ fontSize: 12, lineHeight: '17px', fontVariantNumeric: 'tabular-nums' }}>{h ? `${h.util}% · ${gb(h.mem_used)}/${gb(h.mem_total)}G` : '—'}</Typography>
       })}
     </Box>
   )
@@ -85,13 +94,16 @@ function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemov
       <Box onClick={() => setOpen((v) => !v)} sx={{ display: 'grid', gridTemplateColumns: COLS, alignItems: 'center', columnGap: 1.5, px: 1.5, minHeight: 46, py: 0.6, cursor: 'pointer', opacity: stale ? 0.55 : 1 }}>
         <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 600 }}>{showHost ? e.alias : ''}</Typography>
         <GpuCol e={e} host={host} color={color} />
+        <GpuUse e={e} host={host} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap title={e.name} sx={{ fontSize: 13.5, fontWeight: 600 }}>{e.name}<Box component="span" sx={{ ml: 1, fontSize: 12, fontWeight: 400, color: running ? 'text.disabled' : sc }}>{stageText}</Box></Typography>
-          {e.note && <Typography noWrap title={e.note} sx={{ fontSize: 12.5, color: 'text.secondary' }}>{e.note}</Typography>}
+          <Typography noWrap title={`${e.name}\n${e.note || ''}`} sx={{ fontSize: 13.5 }}>
+            {e.note || e.name}
+            {!running && e.status !== 'done' && <Box component="span" sx={{ ml: 1, fontSize: 12, color: sc }}>{stageText}</Box>}
+          </Typography>
         </Box>
         <Box sx={{ minWidth: 0 }}>
           <Bar frac={e.frac} color={sc} running={running} dark={dark} />
-          <Typography noWrap title={e.label} sx={{ fontSize: 12, color: 'text.secondary', mt: 0.4 }}>{e.label || (running ? '没认出进度' : '')}</Typography>
+          <Typography noWrap title={e.label} sx={{ fontSize: 12, color: 'text.secondary', mt: 0.4 }}>{e.label.replace(/（本轮[^）]*）/, '') || (running ? '没认出进度' : '')}</Typography>
         </Box>
         <Typography sx={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{pct === null ? '—' : `${Math.round(pct)}%`}</Typography>
         <Typography noWrap sx={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{clock(e.start)}</Typography>
@@ -126,7 +138,7 @@ function Head({ ended, sort, desc, onSort }: { ended: boolean; sort: SortKey; de
   )
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: COLS, columnGap: 1.5, px: 1.5, py: 1, fontSize: 13, fontWeight: 500, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>
-      {cell('主机', 'alias')}{cell('显卡 · 利用率 · 显存')}{cell('实验', 'name')}{cell('进度', 'frac')}{cell('', 'frac', true)}{cell('开始', 'start')}{cell(ended ? '结束' : '预计结束', 'end')}
+      {cell('主机', 'alias')}{cell('显卡')}{cell('利用率 · 显存')}{cell('实验', 'name')}{cell('进度', 'frac')}{cell('', 'frac', true)}{cell('开始', 'start')}{cell(ended ? '结束' : '预计结束', 'end')}
     </Box>
   )
 }
@@ -203,7 +215,6 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
   const onSort = (k: SortKey) => setSort((s) => (s.k === k ? { k, desc: !s.desc } : { k, desc: k === 'start' || k === 'end' ? true : false }))
   const hostColor: Record<string, number> = {}
   const colorOf = (e: Exp) => { hostColor[e.alias] = (hostColor[e.alias] ?? -1) + 1; return TASK_COLORS[hostColor[e.alias] % TASK_COLORS.length] }
-  const idle = useMemo(() => (ended ? [] : Object.keys(hosts).filter((a) => !items.some((x) => x.status === 'running' && x.alias === a)).sort()), [hosts, items, ended])
 
   const seg = (k: Tab, text: string, n: number) => (
     <Box onClick={() => { setTab(k); setSort(k === 'end' ? { k: 'end', desc: true } : { k: 'alias', desc: false }) }} sx={{ px: 1.6, py: 0.55, fontSize: 13, cursor: 'pointer', userSelect: 'none', color: tab === k ? '#fff' : 'primary.main', bgcolor: tab === k ? 'primary.main' : 'transparent', border: 1, borderColor: 'primary.main', borderRight: k === 'run' ? 0 : 1, borderRadius: k === 'run' ? '4px 0 0 4px' : '0 4px 4px 0', lineHeight: 1.2 }}>
@@ -246,11 +257,6 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
               <Row key={e.id} e={e} host={hosts[e.alias]} showHost={sort.k !== 'alias' || i === 0 || rows[i - 1].alias !== e.alias} zebra={i % 2 === 1} now={now} dark={dark} color={colorOf(e)} ended={ended}
                 onLog={() => setLogFor(e)} onRemove={() => api.exp_remove(e.id)} />
             ))}
-            {idle.length > 0 && !q && (
-              <Box sx={{ px: 1.5, py: 1.2, borderTop: 1, borderColor: 'divider', fontSize: 12.5, color: 'text.secondary', display: 'flex', gap: 2.5, flexWrap: 'wrap' }}>
-                {idle.map((a) => <span key={a}><b style={{ fontWeight: 600 }}>{a}</b> 空闲</span>)}
-              </Box>
-            )}
           </Box>
         </Box>
       </Box>

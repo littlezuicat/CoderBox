@@ -16,7 +16,7 @@ import tempfile
 
 log = logging.getLogger("majing.exp")
 
-SYSTEM = "用一句中文说明这个深度学习实验在做什么：任务+数据集或方法要点，必须不超过18个字，例如“RESIDE上训练去雾网络”“DETR微调检测COCO”。不写路径和参数，不加标点引号，只输出这一句。"
+SYSTEM = "用一句中文（20到30个字，不换行）概括这个深度学习实验在做什么：任务、数据集、方法要点，例如“在RESIDE数据集上训练基于Transformer的单图像去雾网络”。不写路径和参数，不加引号，不要用“这是”开头，直接说做什么，只输出这一句。"
 GPT_MODEL = "gpt-6-luna"
 PROVIDERS = {"haiku": "claude", "gpt": "codex"}
 
@@ -167,13 +167,14 @@ def clean(text):
     t = (text or "").strip().splitlines()
     t = t[0].strip() if t else ""
     t = _NOISE.sub("", t).strip(" \t\"'“”‘’「」`*。.；;")
+    t = re.sub(r"^(?:这是|该实验是|本实验是)(?:一个|一项|一次)?", "", t).strip(" ，,：:")
     if "（" in t and "）" not in t:
         t = t.split("（")[0].strip() or t
-    if len(t) > 26:
-        cut =re.split(r"[，,；;、]", t)[0]
-        t = cut if len(cut) >= 6 else t
-    if len(t) > 26:
-        t = t[:25] + "…"
+    if len(t) > 34:
+        cut = re.split(r"[，,；;、]", t)[0]
+        t = cut if len(cut) >= 14 else t
+    if len(t) > 34:
+        t = t[:33] + "…"
     return t
 
 

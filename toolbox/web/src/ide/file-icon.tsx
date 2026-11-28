@@ -13,27 +13,25 @@ const T = theme as unknown as {
   light: { file: string; fileExtensions: Map; fileNames: Map; languageIds: Map }
 }
 
-// 扩展名 → VS Code 语言 id（只列 Seti 里有图标的语言；VS Code 本身是由各语言扩展声明的，这里手工抄常见的）
-const LANG_EXT: Record<string, string> = {
-  py: 'python', pyw: 'python', pyi: 'python', pyx: 'python',
-  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascriptreact', ts: 'typescript', mts: 'typescript', cts: 'typescript', tsx: 'typescriptreact',
-  json: 'json', jsonc: 'jsonc', jsonl: 'jsonl', ndjson: 'jsonl', webmanifest: 'json', geojson: 'json',
-  md: 'markdown', markdown: 'markdown', mdown: 'markdown',
-  sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', ksh: 'shellscript', fish: 'shellscript', bashrc: 'shellscript', zshrc: 'shellscript', profile: 'shellscript', bash_profile: 'shellscript', bash_logout: 'shellscript', zprofile: 'shellscript', zlogin: 'shellscript',
-  yaml: 'yaml', yml: 'yaml',
-  xml: 'xml', xsd: 'xml', xsl: 'xml', xslt: 'xml', plist: 'xml', csproj: 'xml', props: 'xml', targets: 'xml',
-  html: 'html', htm: 'html', xhtml: 'html', css: 'css', scss: 'scss', less: 'less',
-  c: 'c', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', 'c++': 'cpp', hxx: 'cpp', cu: 'cuda-cpp', cs: 'csharp', m: 'objective-c', mm: 'objective-cpp',
-  go: 'go', rs: 'rust', java: 'java', rb: 'ruby', php: 'php', lua: 'lua', pl: 'perl', pm: 'perl', r: 'r', jl: 'julia', swift: 'swift', dart: 'dart', groovy: 'groovy', clj: 'clojure', fs: 'fsharp', fsx: 'fsharp',
-  sql: 'sql', bat: 'bat', cmd: 'bat', ps1: 'powershell', psm1: 'powershell', tex: 'latex', env: 'dotenv', ini: 'properties', cfg: 'properties', conf: 'properties', properties: 'properties',
-  gitignore: 'ignore', dockerignore: 'ignore', mk: 'makefile', mak: 'makefile', hbs: 'handlebars', pug: 'jade', coffee: 'coffeescript',
-}
-const LANG_NAME: Record<string, string> = {
-  dockerfile: 'dockerfile', makefile: 'makefile', gnumakefile: 'makefile', '.bashrc': 'shellscript', '.zshrc': 'shellscript', '.profile': 'shellscript', '.bash_profile': 'shellscript',
-  '.gitignore': 'ignore', '.dockerignore': 'ignore', '.env': 'dotenv', 'docker-compose.yml': 'dockercompose', 'docker-compose.yaml': 'dockercompose', 'compose.yaml': 'dockercompose', 'compose.yml': 'dockercompose',
+// 文件 → 语言 id：和 VS Code 一样，来自各扩展在 package.json 里声明的 contributes.languages（扩展名 / 文件名 / 文件名模式）。
+// 表是 tools/gen_lang_map.py 从本机 VS Code 的内置扩展 + 已安装扩展里收集生成的（seti/lang-map.json），不再手抄。
+import langMap from './seti/lang-map.json'
+
+const LM = langMap as unknown as { ext: Record<string, string>; names: Record<string, string>; patterns: [string, string][] }
+const PATTERNS = LM.patterns.map(([g, id]) => [new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$'), id] as [RegExp, string])
+
+function languageOf(n: string): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(LM.names, n)) return LM.names[n]
+  const parts = n.split('.')
+  for (let i = 1; i < parts.length; i++) {            // a.b.c：先试 b.c 再试 c（最长的后缀优先）
+    const k = parts.slice(i).join('.')
+    if (Object.prototype.hasOwnProperty.call(LM.ext, k)) return LM.ext[k]
+  }
+  for (const [re, id] of PATTERNS) if (re.test(n)) return id
+  return undefined
 }
 
-// Seti 里只有 zip 等少数几种压缩格式有图标；tgz、tar.gz、7z 这些常见的也统一用压缩包图标
+// Seti 里只有 zip 一种压缩格式有图标（VS Code 里 tgz、rar、7z 也是默认文件图标）；这里额外把常见压缩包统一用压缩包图标，是和 VS Code 唯一不同的地方
 const ARCHIVE_EXT = new Set(['tgz', 'tar', 'gz', 'bz2', 'xz', 'zst', 'lz4', 'tbz', 'tbz2', 'txz', '7z', 'rar', 'z', 'lzma', 'cab', 'iso', 'whl', 'egg', 'jar', 'war', 'apk'])
 
 function resolve(name: string, dark: boolean): { ch: string; color: string } {
@@ -45,12 +43,8 @@ function resolve(name: string, dark: boolean): { ch: string; color: string } {
     const parts = n.split('.')
     for (let i = 1; i < parts.length && !id; i++) id = look(T.fileExtensions, T.light.fileExtensions, parts.slice(i).join('.'))
   }
+  if (!id) { const lang = languageOf(n); if (lang) id = look(T.languageIds, T.light.languageIds, lang) }
   if (!id && ARCHIVE_EXT.has(n.slice(n.lastIndexOf('.') + 1)) && n.includes('.')) id = look(T.fileExtensions, T.light.fileExtensions, 'zip')
-  if (!id) {
-    let lang = LANG_NAME[n]
-    if (!lang) { const i = n.lastIndexOf('.'); if (i >= 0) lang = LANG_EXT[n.slice(i + 1)] }
-    if (lang) id = look(T.languageIds, T.light.languageIds, lang)
-  }
   const isDefault = !id
   if (!id) id = (!dark && T.light.file) || T.file
   const d = T.iconDefinitions[id] || T.iconDefinitions[T.file]

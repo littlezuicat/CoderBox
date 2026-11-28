@@ -80,7 +80,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
 
   useEffect(() => {
     const e = monaco.editor.create(box.current!, {
-      theme: dark ? 'vs-dark' : 'vs', automaticLayout: true, fontSize: 13.5, fontFamily: 'Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace',
+      theme: dark ? 'vs-dark' : 'vs', automaticLayout: true, fontSize: 15, fontFamily: 'Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace',
       minimap: { enabled: false }, scrollBeyondLastLine: false, renderWhitespace: 'selection', smoothScrolling: true, padding: { top: 6 },
     })
     ed.current = e

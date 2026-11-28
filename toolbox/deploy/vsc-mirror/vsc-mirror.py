@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """VS Code Server 镜像：把微软的 VS Code Server 安装包预取到本机，放进 nginx 的静态目录，供码境工具箱下载。
+Linux（x64 / arm64，tar.gz）和 Windows（x64，zip）都有；Windows 主机用“在 VSCode 打开”时，工具箱也从这里下。
 
 为什么要有：用户电脑直接从微软下载 230MB 的安装包，国内网络常常只有几百 KB/s；服务器后台慢慢拉一次（断点续传），
-所有用户就都从 https://www.zuicat.cn/toolbox/vscode-server/<提交号>/vscode-server-linux-<架构>.tar.gz 下，没有就回退微软。
+所有用户就都从 https://www.zuicat.cn/toolbox/vscode-server/<提交号>/vscode-server-linux-<架构>.tar.gz（Windows 是 vscode-server-win32-x64.zip）下，没有就回退微软。
 
 用法：
   vsc-mirror.py latest            拉取最新稳定版（x64 + arm64），清理旧版本（定时器每天跑一次）
@@ -21,7 +22,12 @@ import urllib.request
 
 ROOT = os.environ.get("VSC_MIRROR_DIR", "/var/www/toolbox/vscode-server")
 KEEP = int(os.environ.get("VSC_MIRROR_KEEP", "4"))
-ARCHES = ("x64", "arm64")
+# (系统, 架构, 文件名, 微软的下载路径, 文件头)；Windows 只要 x64（arm64 的 Windows 主机极少）
+TARGETS = [
+    ("linux", "x64", "vscode-server-linux-x64.tar.gz", "server-linux-x64", b"\x1f\x8b"),
+    ("linux", "arm64", "vscode-server-linux-arm64.tar.gz", "server-linux-arm64", b"\x1f\x8b"),
+    ("win32", "x64", "vscode-server-win32-x64.zip", "server-win32-x64", b"PK"),
+]
 UA = "Mozilla/5.0 (majing-toolbox vsc-mirror)"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -37,43 +43,44 @@ def latest_commit():
     return j["version"], j.get("productVersion", "")
 
 
-def valid(path):
+def valid(path, magic=b"\x1f\x8b"):
     try:
         if os.path.getsize(path) < 20_000_000:
             return False
         with open(path, "rb") as f:
-            return f.read(2) == b"\x1f\x8b"
+            return f.read(len(magic)) == magic
     except OSError:
         return False
 
 
-def fetch(commit, arch):
+def fetch(commit, target):
+    osn, arch, fname, ms_path, magic = target
     d = os.path.join(ROOT, commit)
     os.makedirs(d, exist_ok=True)
-    dest = os.path.join(d, "vscode-server-linux-%s.tar.gz" % arch)
-    if valid(dest):
-        log("已有", commit[:10], arch)
+    dest = os.path.join(d, fname)
+    if valid(dest, magic):
+        log("已有", commit[:10], osn, arch)
         return True
     part = dest + ".part"
-    url = "https://update.code.visualstudio.com/commit:%s/server-linux-%s/stable" % (commit, arch)
+    url = "https://update.code.visualstudio.com/commit:%s/%s/stable" % (commit, ms_path)
     for attempt in range(1, 41):
-        log("下载", commit[:10], arch, "第", attempt, "次（接着已有的部分下）")
+        log("下载", commit[:10], osn, arch, "第", attempt, "次（接着已有的部分下）")
         # -C - 断点续传；速度低于 20KB/s 持续 2 分钟就放弃这一次重来
         rc = subprocess.run(["curl", "-fL", "-A", UA, "-C", "-", "--connect-timeout", "30", "--speed-limit", "20000", "--speed-time", "120", "-o", part, url]).returncode
         if rc == 0:
             break
-        if rc == 33 and valid(part):                             # 416：已经下完
+        if rc == 33 and valid(part, magic):                             # 416：已经下完
             break
         if rc == 22:                                             # HTTP 4xx：这个提交号/架构微软那边没有，别重试了
-            log("微软没有这个版本：", commit[:10], arch)
+            log("微软没有这个版本：", commit[:10], osn, arch)
             return False
         time.sleep(min(10 * attempt, 60))
     else:
-        log("放弃（保留已下的部分，下次接着下）", commit[:10], arch)
+        log("放弃（保留已下的部分，下次接着下）", commit[:10], osn, arch)
         return False
-    if not valid(part):
+    if not valid(part, magic):
         os.remove(part)
-        log("下载到的文件不是有效的 gzip，已删除", commit[:10], arch)
+        log("下载到的文件头不对（不是有效的安装包），已删除", commit[:10], osn, arch)
         return False
     h = hashlib.sha256()
     with open(part, "rb") as f:
@@ -83,7 +90,7 @@ def fetch(commit, arch):
     with open(dest + ".sha256", "w") as f:
         f.write("%s  %s\n" % (h.hexdigest(), os.path.basename(dest)))
     os.chmod(dest, 0o644)
-    log("完成", commit[:10], arch, "%.1f MB" % (os.path.getsize(dest) / 1048576))
+    log("完成", commit[:10], osn, arch, "%.1f MB" % (os.path.getsize(dest) / 1048576))
     return True
 
 
@@ -101,7 +108,7 @@ def write_index(latest=""):
     for x in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, x)
         if COMMIT_RE.match(x) and os.path.isdir(p):
-            idx["commits"][x] = {a: os.path.getsize(os.path.join(p, "vscode-server-linux-%s.tar.gz" % a)) for a in ARCHES if valid(os.path.join(p, "vscode-server-linux-%s.tar.gz" % a))}
+            idx["commits"][x] = {fname: os.path.getsize(os.path.join(p, fname)) for _o, _a, fname, _m, magic in TARGETS if valid(os.path.join(p, fname), magic)}
     tmp = os.path.join(ROOT, "index.json.tmp")
     with open(tmp, "w") as f:
         json.dump(idx, f, indent=1)
@@ -120,7 +127,7 @@ def main():
         c, ver = latest_commit()
         log("最新稳定版", ver, c)
         commits, latest = [c], c
-    ok = all([fetch(c, a) for c in commits for a in ARCHES])
+    ok = all([fetch(c, t) for c in commits for t in TARGETS])
     if latest:
         prune(latest)
     write_index(latest)

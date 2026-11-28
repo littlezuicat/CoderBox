@@ -94,8 +94,13 @@ def _sources(commit, arch, quality, win=False):
     env = os.environ.get("MAJING_VSC_URL")
     if env:
         return [env.format(commit=commit, arch=arch, quality=quality)]
-    if win:                                                      # Windows 服务端（zip）镜像里没有，直接走微软
-        return ["https://update.code.visualstudio.com/commit:%s/server-win32-%s/%s" % (commit, arch, quality)]
+    if win:                                                      # Windows 服务端（zip）：同样先走码境镜像（只有 x64 的稳定版），没有再回退微软
+        w = []
+        mirror = os.environ.get("MAJING_VSC_MIRROR", MIRROR)
+        if mirror and quality == "stable" and arch == "x64":
+            w.append("%s/%s/vscode-server-win32-x64.zip" % (mirror.rstrip("/"), commit))
+        w.append("https://update.code.visualstudio.com/commit:%s/server-win32-%s/%s" % (commit, arch, quality))
+        return w
     out = []
     mirror = os.environ.get("MAJING_VSC_MIRROR", MIRROR)
     if mirror and quality == "stable":
@@ -166,7 +171,23 @@ def _download(urls, dest, prog, magic=b"\x1f\x8b", keep="vscode-server-*-linux-*
     if magic_read != magic or os.path.getsize(part) < 5_000_000:
         os.remove(part)
         raise RuntimeError("下载到的不是有效的安装包（可能被网络拦截了）。")
-    os.replace(part, dest)
+    if magic == b"PK":                                           # zip：打开读一遍目录，坏包（被截断、混进别的内容）当场发现，不要传到主机上才失败
+        import zipfile
+        try:
+            with zipfile.ZipFile(part) as z:
+                if not z.namelist():
+                    raise zipfile.BadZipFile("空包")
+        except Exception as e:                                   # noqa: BLE001
+            os.remove(part)
+            raise RuntimeError("下载到的安装包是坏的（%s），已删除，请重试。" % e)
+    for k in range(8):                                           # 杀毒软件刚好在扫描新下载的文件时会短暂占用（WinError 32），隔一会儿重试
+        try:
+            os.replace(part, dest)
+            break
+        except PermissionError:
+            if k == 7:
+                raise
+            time.sleep(0.5 * (k + 1))
     for old in glob.glob(os.path.join(os.path.dirname(dest), keep)):          # 旧版本的安装包不留，每个 230MB
         if os.path.abspath(old) != os.path.abspath(dest):
             try:
@@ -202,12 +223,16 @@ def _install_windows(alias, cli, sftp, loc, prog):
     if not have:
         local = os.path.join(_cache_dir(), name)
         prog("download", 0, "正在下载 Windows 服务端（%s）…" % arch)
-        try:
-            _download(_sources(commit, arch, quality, win=True), local, prog, magic=b"PK", keep="vscode-server-*-win32-*")
-        except RuntimeError:
-            raise
-        except Exception as e:                                   # noqa: BLE001
-            raise RuntimeError("本机下载失败：%s（检查本机网络或代理）" % e)
+        for attempt in (1, 2):                                   # 缓存里留着的半截包是坏的（或两处同时在写）时，校验会删掉它；再来一次就是从头下
+            try:
+                _download(_sources(commit, arch, quality, win=True), local, prog, magic=b"PK", keep="vscode-server-*-win32-*")
+                break
+            except RuntimeError as e:
+                if attempt == 2 or "是坏的" not in str(e):
+                    raise
+                prog("download", 0, "缓存的安装包有问题，重新下载…")
+            except Exception as e:                               # noqa: BLE001
+                raise RuntimeError("本机下载失败：%s（检查本机网络或代理）" % e)
         prog("upload", 0, "正在上传到 %s…" % alias)
         for d in (home + "/.vscode-server", home + "/.vscode-server/bin"):
             try:

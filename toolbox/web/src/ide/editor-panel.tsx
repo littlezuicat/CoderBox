@@ -1,14 +1,18 @@
 // 编辑器：标签页 + Monaco。点开远程文件（经 SFTP 读），Ctrl+S 存回服务器；没保存的标签上有圆点。
 import CloseRounded from '@mui/icons-material/CloseRounded'
-import { alpha, Box, Typography } from '@mui/material'
+import CodeRounded from '@mui/icons-material/CodeRounded'
+import VisibilityRounded from '@mui/icons-material/VisibilityRounded'
+import { Box, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
 import { StatStrip, type SysInfo } from '../components/sysinfo-bar'
 import FileIcon from './file-icon'
 import { langOf, monaco } from './monaco'
+import { freePreview, isMarkdown, type Loaded, loadPreview, MdView, PreviewView, type PKind, previewKind } from './preview'
 
-type F = { model: any; enc: string; saved: number; view?: any; saving?: boolean; timer?: number }
+// 文本文件有 Monaco 模型；图片/PDF/表格没有模型，只有 pv（读回来的字节做成的对象地址或工作簿）
+type F = { model?: any; kind: 'text' | PKind; pv?: Loaded; enc: string; saved: number; view?: any; saving?: boolean; timer?: number }
 export type OpenReq = { path: string; n: number } | null
 
 const base = (p: string) => p.split('/').pop() || p
@@ -18,26 +22,31 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
   const ed = useRef<any>(null)
   const files = useRef<Map<string, F>>(new Map())
   const curRef = useRef('')
+  const mdSrcRef = useRef<Set<string>>(new Set())
   const [tabs, setTabs] = useState<{ path: string; dirty: boolean }[]>([])
   const [cur, setCur] = useState('')
   const [msg, setMsg] = useState('')
   const [pos, setPos] = useState('')
+  const [meta, setMeta] = useState('')
+  const [mdSrc, setMdSrc] = useState<Set<string>>(new Set())      // Markdown 默认看渲染结果；进了这个集合的文件显示源码
   curRef.current = cur
+  mdSrcRef.current = mdSrc
 
-  const syncTabs = () => setTabs((t) => t.map((x) => ({ ...x, dirty: !!files.current.get(x.path) && files.current.get(x.path)!.model.getAlternativeVersionId() !== files.current.get(x.path)!.saved })))
+  const syncTabs = () => setTabs((t) => t.map((x) => { const f = files.current.get(x.path); return { ...x, dirty: !!f?.model && f.model.getAlternativeVersionId() !== f.saved } }))
   const say = (s: string) => { setMsg(s); onStatus?.(s) }
 
   const show = (path: string) => {
     const e = ed.current; if (!e) return
-    const old = files.current.get(curRef.current); if (old) old.view = e.saveViewState()
+    const old = files.current.get(curRef.current); if (old?.model) old.view = e.saveViewState()
     const f = files.current.get(path); if (!f) return
-    e.setModel(f.model); if (f.view) e.restoreViewState(f.view)
-    setCur(path); e.focus()
+    if (f.model) { e.setModel(f.model); if (f.view) e.restoreViewState(f.view) } else e.setModel(null)
+    setMeta(''); setCur(path)
+    if (f.model && !(isMarkdown(path) && !mdSrcRef.current.has(path))) e.focus()
   }
   // 保存某个文件。改完停一会儿自动保存（SSH 主机上的文件不弹“没保存”确认），Ctrl+S 立刻保存
   const saveFile = async (path: string): Promise<boolean> => {
     const f = files.current.get(path)
-    if (!f) return true
+    if (!f || !f.model) return true
     window.clearTimeout(f.timer)
     if (f.saving) return false
     const ver = f.model.getAlternativeVersionId()
@@ -57,13 +66,13 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
 
   const close = async (path: string) => {
     const f = files.current.get(path); if (!f) return
-    if (f.model.getAlternativeVersionId() !== f.saved) {
+    if (f.model && f.model.getAlternativeVersionId() !== f.saved) {
       const ok = await saveFile(path)                 // 先自动保存；保存不了才问一句
       if (!ok && !window.confirm(`${base(path)} 保存失败，确定不保存直接关闭吗？`)) return
     }
     window.clearTimeout(f.timer)
     const order = tabs.map((t) => t.path), i = order.indexOf(path)
-    files.current.delete(path); f.model.dispose()
+    files.current.delete(path); f.model?.dispose(); freePreview(f.pv)
     const rest = order.filter((p) => p !== path)
     setTabs((t) => t.filter((x) => x.path !== path))
     if (curRef.current === path) { if (rest.length) show(rest[Math.min(i, rest.length - 1)]); else { ed.current?.setModel(null); setCur('') } }
@@ -81,7 +90,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
       if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.keyCode === monaco.KeyCode.KeyS) { ev.preventDefault(); ev.stopPropagation(); saveRef.current() }
     })
     e.onDidChangeCursorPosition((ev: any) => setPos(`行 ${ev.position.lineNumber}，列 ${ev.position.column}`))
-    return () => { e.dispose(); files.current.forEach((f) => f.model.dispose()); files.current.clear() }
+    return () => { e.dispose(); files.current.forEach((f) => { f.model?.dispose(); freePreview(f.pv) }); files.current.clear() }
   }, [])
   useEffect(() => { monaco.editor.setTheme(dark ? 'vs-dark' : 'vs') }, [dark])
 
@@ -91,11 +100,22 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
     const path = req.path
     if (files.current.has(path)) { show(path); return }
     say(`正在打开 ${base(path)}…`)
+    const pk = previewKind(path)
+    if (pk) {                                           // 图片 / PDF / 表格：按字节读回来预览
+      loadPreview(alias, path, pk).then((r) => {
+        if ('error' in r) return say(r.error)
+        if (files.current.has(path)) { freePreview(r.pv); return show(path) }
+        files.current.set(path, { kind: pk, pv: r.pv, enc: '', saved: 0 })
+        setTabs((t) => [...t, { path, dirty: false }])
+        show(path); say(base(path))
+      })
+      return
+    }
     api.ssh_read_file(alias, path).then((r: any) => {
       if (!r.ok) return say(r.error || '打不开')
       if (files.current.has(path)) return show(path)
       const model = monaco.editor.createModel(r.text, langOf(path), monaco.Uri.parse(`remote://${alias}${path}`))
-      const f: F = { model, enc: r.encoding, saved: model.getAlternativeVersionId() }
+      const f: F = { model, kind: 'text', enc: r.encoding, saved: model.getAlternativeVersionId() }
       model.onDidChangeContent(() => { syncTabs(); autoSave(path) })
       files.current.set(path, f)
       setTabs((t) => [...t, { path, dirty: false }])
@@ -105,6 +125,10 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
 
   useEffect(() => { if (visible) setTimeout(() => ed.current?.layout(), 30) }, [visible])
   const f = files.current.get(cur)
+  const md = !!f?.model && isMarkdown(cur)
+  const mdPreview = md && !mdSrc.has(cur)
+  const textShown = !!f?.model && !mdPreview
+  const toggleMd = () => { setMdSrc((s) => { const n = new Set(s); n.has(cur) ? n.delete(cur) : n.add(cur); return n }); setTimeout(() => { ed.current?.layout(); ed.current?.focus() }, 30) }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -121,9 +145,18 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
             </Box>
           </Box>
         ))}
+        <Box sx={{ flex: 1 }} />
+        {md && (
+          <Box onClick={toggleMd} title={mdPreview ? '看源码（可编辑）' : '看渲染后的效果'}
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.2, cursor: 'pointer', fontSize: 12.5, color: 'text.secondary', flexShrink: 0, '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
+            {mdPreview ? <CodeRounded sx={{ fontSize: 16 }} /> : <VisibilityRounded sx={{ fontSize: 16 }} />}{mdPreview ? '源码' : '预览'}
+          </Box>
+        )}
       </Box>
       <Box sx={{ flex: 1, minHeight: 0, position: 'relative', bgcolor: (th) => (th.palette.mode === 'light' ? '#ffffff' : 'transparent') }}>
-        <div ref={box} style={{ position: 'absolute', inset: 0, visibility: cur ? 'visible' : 'hidden' }} />
+        <div ref={box} style={{ position: 'absolute', inset: 0, visibility: textShown ? 'visible' : 'hidden' }} />
+        {mdPreview && <MdView text={f!.model.getValue()} dark={dark} />}
+        {f && !f.model && f.pv && <PreviewView key={cur} kind={f.kind as PKind} pv={f.pv} dark={dark} onMeta={setMeta} />}
         {!cur && (
           <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: 'text.disabled', userSelect: 'none' }}>
             <Typography sx={{ fontSize: 15 }}>点左边的文件，在这里打开</Typography>
@@ -132,7 +165,8 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
       </Box>
       <Box sx={{ flex: '0 0 22px', display: 'flex', alignItems: 'center', gap: 2, px: 1.2, fontSize: 11.5, color: 'text.secondary', borderTop: 1, borderColor: 'divider', whiteSpace: 'nowrap', overflow: 'hidden', '& > span': { flexShrink: 0 } }}>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{msg}</span>
-        {cur && <><span>{pos}</span><span>{f?.enc}</span><span>{langOf(cur)}</span></>}
+        {cur && f?.model && <><span>{pos}</span><span>{f.enc}</span><span>{langOf(cur)}</span></>}
+        {cur && f && !f.model && <span>{meta}</span>}
         <StatStrip info={info ?? null} />
       </Box>
     </Box>

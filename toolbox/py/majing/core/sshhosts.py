@@ -1990,15 +1990,16 @@ def fs_stat(alias, path):
     return _fs_op(alias, go)
 
 
-def fs_read_bytes(alias, path):
+def fs_read_bytes(alias, path, limit=None):
     """按原始字节读整个文件（base64），不做任何解码，编码交给编辑器去猜。并发预取，千兆内网能跑满。"""
     def go(sftp, c):
         st = sftp.stat(path)
         size = st.st_size or 0
         if statmod.S_ISDIR(st.st_mode or 0):
             raise ValueError("这是文件夹。")
-        if size > BYTES_LIMIT:
-            raise ValueError("文件太大（%.1f MB），超过 %d MB 不在编辑器里打开。" % (size / 1048576, BYTES_LIMIT // 1048576))
+        cap = min(int(limit), BYTES_LIMIT) if limit else BYTES_LIMIT           # 预览按类型给更小的上限（图片/PDF/表格），免得在界面里 base64 一个几百 MB 的文件
+        if size > cap:
+            raise ValueError("文件太大（%.1f MB），超过 %d MB 不在编辑器里预览，请下载后查看。" % (size / 1048576, cap // 1048576))
         parts = []
         with sftp.open(path, "rb") as f:
             if size:

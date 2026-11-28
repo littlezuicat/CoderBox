@@ -89,6 +89,11 @@ cd web; npx tsc --noEmit -p .                                           # 类型
 - **claude 命令要先 `claude auth login`**（桌面应用的登录和命令行是两套，开发机上命令行没登录；界面有“登录 Claude”按钮 → `gpumon.open_login()`）。没登录时记录标“备注没写成”，登录后自动重试失败的。
 - 测试方法：`MAJING_CLAUDE_BIN` 指到桩脚本即可不用真 claude；真 Linux 验证用 WSL(Ubuntu-24.04) + 假 nvidia-smi（测完 `wsl --terminate`）。测试脚本在会话 scratchpad，没入库。**真 Haiku 调用、真 GPU 服务器都还没验证过。**
 
+## SSH 编辑器的文件预览（2026-11-28）
+- 点开文件时按扩展名分流（`web\src\ide\preview.tsx`，接在 `editor-panel.tsx` 的标签页里）：图片（png/jpg/gif/webp/bmp/svg/ico/avif，滚轮缩放、双击切换适应/原始大小）、PDF（blob 地址塞进 iframe，用 WebView2 自带的 PDF 查看器，真窗口里验证过）、Excel（xlsx/xlsm/xlsb/xls/ods，SheetJS，只渲染前 2000 行 × 80 列，多工作表底部切换；库在打开表格时才动态加载）、Markdown（仍是文本文件，默认看渲染，标签栏右侧「源码/预览」切换；marked + DOMPurify，只放行 http(s) 链接，相对路径图片不加载）。图片/PDF/表格没有 Monaco 模型（`F.model` 为空），读字节走 `api.ssh_read_bytes(alias, path, limit)`（图片 60MB、PDF 150MB、表格 40MB 上限）。
+- **Pylance 没法嵌**：它是微软闭源组件，许可只允许在微软自家的 VS Code 里用，不能放进别的程序；要 Pylance 就用头部的「VS Code」按钮。要的话以后可以考虑接开源的 Pyright（MIT）做轻量的 Python 提示。
+- 浏览器 mock（`mock.ts`）里有示例文件：projects/llm-train 下的 report.xlsx、paper.pdf、pics/*.png|jpg、README.md。**没验证**：真服务器上的大文件预览、打包版 exe。
+
 ## 一键装 VS Code Server（2026-11-24，未发布）
 SSH管理右上角 `</>` 按钮 → `py\majing\corescserver.py`：读本机 `code --version` 的提交号 → 本机下载 `update.code.visualstudio.com/commit:<提交>/server-linux-<架构>/stable`（缓存在 %APPDATA%\MajingToolboxscode-server）→ SFTP 上传 → 服务器解压到 `~/.vscode-server/bin/<提交>/` 并清掉卡住的安装锁。只支持 Linux 主机。事件 `vsc:progress` / `vsc:done`。测试用 `MAJING_VSC_URL` 指到本地 http 服务 + WSL。真微软下载、真服务器未验证。本机 VS Code 更新后提交号会变，要再点一次。
 

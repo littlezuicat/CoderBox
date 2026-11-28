@@ -51,6 +51,8 @@ const vfsDel = (p: string) => { for (const k of [...VFS.keys()]) if (k === p || 
   f('/home/demo/projects/llm-train/train.py', 'import argparse\nimport torch\nimport yaml\n\n\ndef main():\n    ap = argparse.ArgumentParser()\n    ap.add_argument("--config", required=True)\n    args = ap.parse_args()\n    cfg = yaml.safe_load(open(args.config, encoding="utf-8"))\n    print("lr =", cfg["lr"], "batch =", cfg["batch_size"])\n    model = torch.nn.Linear(cfg["dim"], cfg["dim"]).cuda()\n    opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"])\n    for step in range(cfg["steps"]):\n        x = torch.randn(cfg["batch_size"], cfg["dim"], device="cuda")\n        loss = (model(x) - x).pow(2).mean()\n        loss.backward(); opt.step(); opt.zero_grad()\n        if step % 100 == 0:\n            print(f"step {step} loss {loss.item():.4f}")\n\n\nif __name__ == "__main__":\n    main()\n')
   f('/home/demo/projects/llm-train/configs/base.yaml', 'lr: 0.0003\nbatch_size: 64\ndim: 4096\nsteps: 20000\nwarmup: 500\nseed: 42\n')
   f('/home/demo/projects/llm-train/README.md', '# llm-train\n\n小规模语言模型训练实验。\n\n```bash\ntorchrun --nproc_per_node=2 train.py --config configs/base.yaml\n```\n')
+  ;[['pics/架构图.png', 120000], ['pics/photo.jpg', 340000], ['report.xlsx', 18000], ['paper.pdf', 2300000]].forEach(([n, z]) => VFS.set('/home/demo/projects/llm-train/' + n, { dir: false, size: z as number, mtime: 1762300000 }))
+  d('/home/demo/projects/llm-train/pics')
   f('/home/demo/projects/llm-train/logs/train.log', 'step 0 loss 1.9321\nstep 100 loss 1.2204\nstep 200 loss 0.8873\nstep 300 loss 0.6412\n')
 })()
 
@@ -211,6 +213,32 @@ export const mock: any = {
     if (f.dir) return { ok: false, error: '这是文件夹。' }
     if (f.text === undefined) return { ok: false, error: '看起来是二进制文件，不能当文本打开。' }
     return { ok: true, text: f.text, encoding: 'utf-8', size: f.text.length, mtime: f.mtime || 0 }
+  },
+  // 预览用：按扩展名现生成一份字节（PNG 用画布画、PDF 手写最小文件、表格临时用 xlsx 库生成）
+  ssh_read_bytes: async (_a: string, path: string) => {
+    await sleep(200)
+    const p = vfsNorm(path), ext = p.split('.').pop()!.toLowerCase()
+    const f = VFS.get(p)
+    if (!f) return { ok: false, error: '文件不存在。' }
+    const enc = (u: Uint8Array) => { let t = ''; for (let i = 0; i < u.length; i++) t += String.fromCharCode(u[i]); return btoa(t) }
+    if (ext === 'png' || ext === 'jpg') {
+      const c = document.createElement('canvas'); c.width = 640; c.height = 360
+      const g = c.getContext('2d')!; const gr = g.createLinearGradient(0, 0, 640, 360); gr.addColorStop(0, '#4f8cff'); gr.addColorStop(1, '#ff7ac8'); g.fillStyle = gr; g.fillRect(0, 0, 640, 360)
+      g.fillStyle = '#fff'; g.font = '48px sans-serif'; g.fillText('预览 ' + p.split('/').pop(), 40, 190)
+      return { ok: true, b64: c.toDataURL(ext === 'png' ? 'image/png' : 'image/jpeg').split(',')[1], size: 1, mtime: 0 }
+    }
+    if (ext === 'xlsx') {
+      const X = await import('xlsx')
+      const wb = X.utils.book_new()
+      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['模型', '参数量', 'Loss', '日期'], ['base', 1.3e9, 0.912, new Date(2026, 10, 1)], ['large', 7e9, 0.731, new Date(2026, 10, 8)], ['xl', 13e9, 0.655, new Date(2026, 10, 15)]], { cellDates: true }), '实验结果')
+      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['step', 'lr'], [0, 0.0003], [100, 0.00029]]), '学习率')
+      return { ok: true, b64: X.write(wb, { type: 'base64', bookType: 'xlsx' }), size: 1, mtime: 0 }
+    }
+    if (ext === 'pdf') {
+      const pdf = ['%PDF-1.4', '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj', '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj', '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 160]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj', '4 0 obj<</Length 44>>stream', 'BT /F1 24 Tf 30 80 Td (Hello PDF) Tj ET', 'endstream endobj', '5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj', 'trailer<</Root 1 0 R/Size 6>>', '%%EOF'].join(String.fromCharCode(10))
+      return { ok: true, b64: btoa(pdf), size: pdf.length, mtime: 0 }
+    }
+    return { ok: true, b64: enc(new TextEncoder().encode(f.text || '')), size: 1, mtime: 0 }
   },
   ssh_write_file: async (_a: string, path: string, text: string) => {
     await sleep(200)

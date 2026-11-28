@@ -1674,8 +1674,8 @@ class Api:
     def ssh_stat(self, alias, path):
         return sshhosts.fs_stat(alias, path)
 
-    def ssh_read_bytes(self, alias, path):
-        return sshhosts.fs_read_bytes(alias, path)
+    def ssh_read_bytes(self, alias, path, limit=None):
+        return sshhosts.fs_read_bytes(alias, path, limit)
 
     def ssh_write_bytes(self, alias, path, b64, create=True, overwrite=True):
         return sshhosts.fs_write_bytes(alias, path, b64, bool(create), bool(overwrite))

@@ -13,6 +13,16 @@ import { freePreview, isMarkdown, type Loaded, loadPreview, MdView, PreviewView,
 
 // 文本文件有 Monaco 模型；图片/PDF/表格没有模型，只有 pv（读回来的字节做成的对象地址或工作簿）
 type F = { model?: any; kind: 'text' | PKind; pv?: Loaded; enc: string; saved: number; view?: any; saving?: boolean; timer?: number }
+// 深色主题：vs-dark 自带的底色是接近纯黑的 #1e1e1e，和界面的深灰蓝（面板色 #282A36）不搭，这里换成面板色
+monaco.editor.defineTheme('majing-dark', {
+  base: 'vs-dark', inherit: true, rules: [],
+  colors: {
+    'editor.background': '#282A36', 'editorGutter.background': '#282A36', 'editor.lineHighlightBackground': '#ffffff0c', 'editor.lineHighlightBorder': '#00000000',
+    'editorLineNumber.foreground': '#6c7189', 'editorLineNumber.activeForeground': '#c3c7d9', 'editorIndentGuide.background1': '#ffffff14', 'editorIndentGuide.activeBackground1': '#ffffff33',
+    'editor.selectionBackground': '#3d5a8a99', 'editor.inactiveSelectionBackground': '#3d5a8a55', 'editorWidget.background': '#2E303D', 'editorSuggestWidget.background': '#2E303D',
+  },
+})
+const themeOf = (dark: boolean) => (dark ? 'majing-dark' : 'vs')
 export type OpenReq = { path: string; n: number } | null
 
 const base = (p: string) => p.split('/').pop() || p
@@ -80,7 +90,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
 
   useEffect(() => {
     const e = monaco.editor.create(box.current!, {
-      theme: dark ? 'vs-dark' : 'vs', automaticLayout: true, fontSize: 15, fontFamily: 'Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace',
+      theme: themeOf(dark), automaticLayout: true, fontSize: 15, lineHeight: 24, fontFamily: 'Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace',
       minimap: { enabled: false }, scrollBeyondLastLine: false, renderWhitespace: 'selection', smoothScrolling: true, padding: { top: 6 },
     })
     ed.current = e
@@ -92,7 +102,7 @@ export default function EditorPanel({ alias, req, visible, dark, info, onStatus 
     e.onDidChangeCursorPosition((ev: any) => setPos(`行 ${ev.position.lineNumber}，列 ${ev.position.column}`))
     return () => { e.dispose(); files.current.forEach((f) => { f.model?.dispose(); freePreview(f.pv) }); files.current.clear() }
   }, [])
-  useEffect(() => { monaco.editor.setTheme(dark ? 'vs-dark' : 'vs') }, [dark])
+  useEffect(() => { monaco.editor.setTheme(themeOf(dark)) }, [dark])
 
   // 外面（文件树）要求打开某个文件
   useEffect(() => {

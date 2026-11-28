@@ -94,6 +94,14 @@ cd web; npx tsc --noEmit -p .                                           # 类型
 - **Pylance 没法嵌**：它是微软闭源组件，许可只允许在微软自家的 VS Code 里用，不能放进别的程序；要 Pylance 就用头部的「VS Code」按钮。要的话以后可以考虑接开源的 Pyright（MIT）做轻量的 Python 提示。
 - 浏览器 mock（`mock.ts`）里有示例文件：projects/llm-train 下的 report.xlsx、paper.pdf、pics/*.png|jpg、README.md。**没验证**：真服务器上的大文件预览、打包版 exe。
 
+## 实验页（2026-11-28，顶栏「实验」）
+- 自动记录各台 Linux+NVIDIA 服务器上正在占显存的深度学习训练，**不调用任何模型**：`py\majing\core\expmon.py`（采集、合并、归档，后台每分钟一轮，`api.exp_*`，事件 `exp:update`）+ `logprog.py`（纯规则的日志进度解析）+ `web\src\pages\experiments.tsx`。记录存 `%APPDATA%\MajingToolbox\experiments.json`。
+- **发现进程**：一条 ssh 命令里 `nvidia-smi` + `find /proc/[0-9]*/fd -lname '/dev/nvidia[0-9]*'`（容器里 nvidia-smi 的 compute-apps 给的是宿主 PID，容器内不存在，所以以 /proc 的 fd 为准）；取用户、cwd、cmdline（换行/制表符要换成空格，否则 bash -c 带多行脚本时会把输出行劈开）、已运行秒数、stdout/stderr 重定向的文件、`CUDA_VISIBLE_DEVICES`。只留 python/torchrun 一类，排除 ipykernel/jupyter 等。同一用户+目录+命令（去掉 local_rank）合成一个实验；跑满 2 分钟或连续两次采样都在才入库；连续 2 次没看到进程才算结束，结束后再读一次日志判 完成/出错/中断。GPU 归属：compute-apps 的 uuid → 否则进程的 CUDA_VISIBLE_DEVICES → 否则整台机只有一个任务时按显存有占用的卡推；实在不知道就显示“GPU ?”。
+- **找日志**：优先 stdout/stderr 重定向到的文件（有这个就不再去目录里找，否则同一个脚本目录下多个实验会串日志）；没有再在 cwd / 脚本目录 / 命令里的 --save_dir 等目录下找最近改过的 *.log *.txt nohup* 等。配置文件（`-opt`/`-c`/`--config`）也读，并跟着 `__include__` / `_base_` 往下读（RT-DETR、mmdet 的总轮数在被引用的文件里）。
+- **进度解析（logprog.analyze）**：不认仓库格式，从每行抽 `epoch n/N`、`Iter [n/N]`、`step :n/N`、`update n/N`、tqdm 条、`epoch: x, iter: y`、HF 的小数 epoch、eta；总数优先取日志里的 `n/N`，再取命令/配置/日志开头参数（`--epochs`、`total_iter`、`epoches`、CycleGAN 的 n_epochs+decay）；判断轮内计数器是否每轮归零来区分“全局 iter”和“轮内 batch”；验证用的进度条不算。预计结束：日志自带 eta（先判断它是整个训练的还是只算当前一轮的，后者按“每轮耗时×剩余轮数”推算）> 日志时间戳速度 > 采样历史速度 > 启动以来平均速度（粗估）。认不出就老实显示“没认出进度”。离线测试 `tools\test_logprog.py`（27 组：BasicSR、MMagic、mmcv、tqdm、Lightning、FFA-Net、KAIR、CycleGAN、HF、RT-DETR 等）。
+- 版式（用户选定）：上面“正在运行”按主机分组，主机占左栏（名字只写一次，带型号和空闲卡），一个任务一横条（GPU0 GPU1 胶囊 | 实验+阶段 | 进度条+说明 | % | 已训练/预计共 + 预计结束）；下面“历史记录”。点一行展开命令/目录/日志路径/指标。
+- 真服务器验证过（只读）：shang 上的 RT-DETR（总轮数在 include 的配置里，按每轮 eta 推算）、msh3/msh4 上的自定义 dehaze.py（每机 2 个实验、各自 cwd 和日志、GPU 归属、`update n/N`）。WSL 假 nvidia-smi 也跑通。**没验证**：多用户裸机（非 root 读不到别人的 fd，靠 compute-apps）、Windows 主机（直接跳过）、torchrun 多卡、真实 BasicSR/MMagic 日志。
+
 ## 一键装 VS Code Server（2026-11-24，未发布）
 SSH管理右上角 `</>` 按钮 → `py\majing\corescserver.py`：读本机 `code --version` 的提交号 → 本机下载 `update.code.visualstudio.com/commit:<提交>/server-linux-<架构>/stable`（缓存在 %APPDATA%\MajingToolboxscode-server）→ SFTP 上传 → 服务器解压到 `~/.vscode-server/bin/<提交>/` 并清掉卡住的安装锁。只支持 Linux 主机。事件 `vsc:progress` / `vsc:done`。测试用 `MAJING_VSC_URL` 指到本地 http 服务 + WSL。真微软下载、真服务器未验证。本机 VS Code 更新后提交号会变，要再点一次。
 

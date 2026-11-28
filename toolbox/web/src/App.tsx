@@ -22,6 +22,7 @@ import { Installer, Uninstaller } from './pages/installer'
 import SecurityPage from './pages/security'
 import SettingsPage from './pages/settings'
 import VaultPage from './pages/vault'
+import ExperimentsPage from './pages/experiments'
 import SshPage from './pages/ssh'
 import { buildTheme } from './theme'
 
@@ -30,6 +31,7 @@ const SHOW_VAULT = false
 
 const NAV = [
   { key: 'ssh', label: 'SSH管理', icon: <NavIcon k="ssh" />, Page: memo(SshPage), files: 'files:ssh' },
+  { key: 'exp', label: '实验记录', icon: <NavIcon k="exp" />, Page: memo(ExperimentsPage), files: '' },
   { key: 'ppt', label: 'PPT定图', icon: <NavIcon k="ppt" />, Page: memo(PptPage), files: 'files:ppt' },
   { key: 'convert', label: '格式转换', icon: <NavIcon k="convert" />, Page: memo(ConvertPage), files: 'files:convert' },
   { key: 'security', label: '设备安全', icon: <NavIcon k="security" />, Page: memo(SecurityPage), files: '' },
@@ -40,7 +42,7 @@ const NAV = [
 ]
 
 // 顶部栏（新布局）里每项压成两个字，完整名字放在悬停提示里
-const SHORT: Record<string, string> = { ppt: '定图', convert: '转换', ssh: '主机', security: '安全', vault: '密码', library: '图书馆', online: '工具', settings: '设置' }
+const SHORT: Record<string, string> = { exp: '实验', ppt: '定图', convert: '转换', ssh: '主机', security: '安全', vault: '密码', library: '图书馆', online: '工具', settings: '设置' }
 
 function NavItem({ selected, icon, children, onClick }: any) {
   return (

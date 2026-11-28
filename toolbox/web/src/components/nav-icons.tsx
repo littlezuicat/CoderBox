@@ -40,6 +40,13 @@ const GLYPH: Record<string, React.ReactNode> = {
     <rect x="3.5" y="13.5" width="17" height="6.5" rx="2.2" />
     <path d="M7.2 7.25h.01M7.2 16.75h.01M11 7.25h5.8M11 16.75h5.8" />
   </>),
+  // 实验：烧瓶 + 液面和气泡
+  exp: (<>
+    <path d="M9.4 3.6h5.2M10.2 3.6v5.6L5.2 17.4c-.9 1.5.1 3.2 1.8 3.2h10c1.7 0 2.7-1.7 1.8-3.2L13.8 9.2V3.6" />
+    <path d="M7.6 14.2h8.8" />
+    <circle cx="11" cy="17.2" r=".5" fill="currentColor" />
+    <circle cx="13.6" cy="16.4" r=".5" fill="currentColor" />
+  </>),
   // 设备安全：盾牌 + 对勾
   security: (<>
     <path d="M12 3.4l7 2.6v5.4c0 4.4-2.9 7.7-7 9.2-4.1-1.5-7-4.8-7-9.2V6z" />

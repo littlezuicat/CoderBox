@@ -9,7 +9,7 @@ import threading
 import time
 
 from majing import APP_VERSION, history, installer
-from majing.core import account, clashfix, devsec, ffsetup, gpumon, litrans, media, ppt_engine, sshhosts, sshserver, updater, vscserver, vsync
+from majing.core import account, clashfix, devsec, expmon, ffsetup, gpumon, litrans, media, ppt_engine, sshhosts, sshserver, updater, vscserver, vsync
 from majing.core import vault as vault_mod
 from majing.core.vault import VaultError, vault
 from majing.core.remote_agent import RemoteAgent
@@ -147,6 +147,7 @@ class Api:
         """窗口加载完成后调用：自动更新。（旧的“设备 ID 远程连接”组件不再随工具箱启动，被连功能改为 SSH 管理里的“共享本机 SSH”。）"""
         self._thread(self._update_loop)
         self._thread(self._vsync_loop)
+        expmon.monitor.start(self._emit)             # 实验记录：后台每分钟扫一次各主机上占着显存的训练进程
         gpumon.monitor.start(self._emit)             # GPU 采样只在界面要求时做（gpu_sample_now），这里只记下事件推送函数
         self._lit_apply_hotkey()                     # 文献翻译的划词热键（设置里开了才注册）
 
@@ -1543,6 +1544,26 @@ class Api:
                 self._busy.pop("vsc", None)
         self._thread(run)
         return {"ok": True}
+
+    # ------------------------------------------------------------------ 实验记录（不调用模型，读日志算进度）
+    def exp_state(self):
+        return expmon.monitor.state()
+
+    def exp_refresh(self):
+        """立刻扫一轮（打开实验页、点刷新时）。结果走 exp:update 事件。"""
+        self._thread(lambda: expmon.monitor.poll_all(force=True))
+        return {"ok": True}
+
+    def exp_remove(self, rid):
+        expmon.monitor.remove(rid)
+        return {"ok": True}
+
+    def exp_clear_finished(self):
+        expmon.monitor.clear_finished()
+        return {"ok": True}
+
+    def exp_log(self, rid):
+        return expmon.monitor.tail_log(rid)
 
     # ------------------------------------------------------------------ GPU 总览（只在打开页面或点刷新时采样一次，不定时）
     def gpu_state(self):

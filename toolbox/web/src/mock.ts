@@ -2,6 +2,26 @@
 import { emitLocal } from './bridge'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const mockExpItems = () => {
+  const n = Math.floor(Date.now() / 1000)
+  const mk = (o: any) => ({ user: 'zhang', cwd: '/data/zhang/dehaze', cmd: 'python train.py', launcher: '', gpus: [0], mem: 18000, pid: 1234, end: null, status: 'running', frac: null, label: '', stage: '训练中', eta_ts: null, eta_src: null, last_line: '', metrics: {}, log: '/data/x.log', error: '', updated: n - 20, ...o })
+  return [
+    mk({ id: 'e1', alias: 'msh3', name: 'NAFNet-dehaze', gpus: [0, 1], cmd: 'python basicsr/train.py -opt options/train/NAFNet-dehaze.yml --launcher none', start: n - 3600 * 17, frac: 0.404, label: 'iter 121,200 / 300,000（epoch 12）', eta_ts: n + 3600 * 25, eta_src: 'log', metrics: { psnr: '31.42', ssim: '0.9712', loss: '1.2e-02' } }),
+    mk({ id: 'e3', alias: 'msh3', user: 'wang', name: 'ConvIR_ots', gpus: [2], start: n - 600, frac: 0.0123, label: 'iter 1,230 / 100,000', eta_ts: n + 3600 * 9, eta_src: 'elapsed', stage: '验证 / 测试中' }),
+    mk({ id: 'e2', alias: 'msh4', user: 'li', name: 'dehazeformer-b · train', gpus: [0], start: n - 3600 * 5, frac: 0.2335, label: 'epoch 47 / 200（本轮 68%）', eta_ts: n + 3600 * 15 + 1200, eta_src: 'rate' }),
+    mk({ id: 'e4', alias: 'shang', user: 'chen', name: 'my_new_net', gpus: [], start: n - 7200, frac: null, label: 'epoch 3 · iter 2,000（总数没识别到）', last_line: '<epoch:  3, iter:   2,000, lr:2.000e-04> G_loss: 1.234e-02' }),
+    mk({ id: 'e5', alias: 'msh2', name: 'FFA-Net_its', gpus: [1], start: n - 86400 * 2, end: n - 3600 * 6, status: 'done', frac: 1, label: 'iter 500,000 / 500,000', stage: '已完成', metrics: { psnr: '36.39', ssim: '0.9886' } }),
+    mk({ id: 'e6', alias: '622', name: 'restormer_haze', gpus: [0], start: n - 86400, end: n - 3600 * 14, status: 'failed', frac: 0.31, label: 'iter 93,000 / 300,000', stage: '出错退出', error: 'RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB' }),
+    mk({ id: 'e7', alias: 'worker', name: 'AECR-Net · test', gpus: [0], start: n - 86400 * 3, end: n - 86400 * 3 + 5400, status: 'stopped', frac: 0.07, label: 'epoch 14 / 200', stage: '已结束（中途退出）' }),
+  ]
+}
+const mockExpHosts = () => {
+  const t = Math.floor(Date.now() / 1000)
+  const g = (n: number, name: string) => Array.from({ length: n }, (_, i) => ({ index: i, name, mem_used: 0, mem_total: 24564, util: 0 }))
+  return { msh3: { t, gpus: g(4, 'NVIDIA GeForce RTX 4090') }, msh4: { t, gpus: g(2, 'NVIDIA GeForce RTX 4090') }, shang: { t, gpus: g(1, 'NVIDIA RTX A5000') }, jiajun: { t, gpus: g(1, 'NVIDIA GeForce RTX 5090') }, msh2: { t, gpus: g(2, 'NVIDIA GeForce RTX 4090') } }
+}
+const mockExp = () => ({ items: S.exp || (S.exp = mockExpItems()), hosts: mockExpHosts(), last_poll: Math.floor(Date.now() / 1000) - 12, busy: false, enabled: true })
+
 // 浏览器里调界面用的假保险库数据（只在 mock 里，和真实保险库无关）
 const MOCK_VAULT: any[] = [
   { id: 'a1', type: 'login', name: 'GitHub', username: 'demo@example.com', password: 'demo-password-1', url: 'https://github.com', notes: '示例', folder: '开发', updated: 1700000000 },
@@ -205,6 +225,12 @@ export const mock: any = {
     })()
     return true
   },
+  // 实验记录的示例数据（浏览器里调界面用）
+  exp_state: () => mockExp(),
+  exp_refresh: () => { setTimeout(() => emitLocal('exp:update', mockExp()), 600); return { ok: true } },
+  exp_remove: (id: string) => { S.exp = (S.exp || mockExpItems()).filter((x: any) => x.id !== id); emitLocal('exp:update', mockExp()); return { ok: true } },
+  exp_clear_finished: () => { S.exp = (S.exp || mockExpItems()).filter((x: any) => x.status === 'running'); emitLocal('exp:update', mockExp()); return { ok: true } },
+  exp_log: async () => ({ ok: true, path: '/data/exp/NAFNet-dehaze/train_NAFNet-dehaze_20261127_231500.log', text: Array.from({ length: 40 }, (_, i) => `2026-11-28 10:${String(i).padStart(2, '0')}:00,123 INFO: [Dehaz..][epoch: 12, iter: ${(121000 + i * 100).toLocaleString()}, lr:(2.000e-04,)] [eta: 1 day, 2:13:45, time (data): 0.412 (0.003)] l_pix: 1.2345e-02`).join('\n') }),
   ssh_sysinfo: async (_a: string) => ({ ok: true, family: 'linux', name: 'Ubuntu 22.04.4 LTS', arch: 'x86_64', container: true, gpus: 2, cloudPath: '/home/demo/projects', cpu: { model: 'AMD EPYC 7763 64-Core Processor', cores: 128, usage: 23 }, mem: { total: 268435456000, used: 98000000000 }, disks: [{ kind: 'system', mount: '/', total: 214748364800, used: 70000000000, nominal: true }, { kind: 'mount', mount: '/data0', total: 210000000000, used: 200000000 }, { kind: 'cloud', mount: '/cloud', total: 1073741824000, used: 457000000000 }] }),
   ssh_read_file: async (_a: string, path: string) => {
     await sleep(150)

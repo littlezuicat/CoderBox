@@ -101,7 +101,7 @@ function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemov
         <GpuCol e={e} host={host} color={color} />
         <GpuUse e={e} host={host} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap title={`${e.name}\n${e.note || ''}`} sx={{ fontSize: 13.5 }}>
+          <Typography title={`${e.name}\n${e.note || ''}`} sx={{ fontSize: 13.5, lineHeight: 1.5, overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }}>
             {e.note || e.name}
             {!running && e.status !== 'done' && <Box component="span" sx={{ ml: 1, fontSize: 12, color: sc }}>{stageText}</Box>}
           </Typography>

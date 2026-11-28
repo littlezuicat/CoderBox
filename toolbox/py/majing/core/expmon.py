@@ -316,6 +316,17 @@ class Monitor:
             self.items = d.get("items", []) if isinstance(d, dict) else []
         except Exception:               # noqa: BLE001
             self.items = []
+        fixed = False
+        for r in self.items:            # 旧版把“跑完的评测脚本”误判成中途退出：日志最后有结果汇总的，改回已完成
+            try:
+                if (r.get("status") == "stopped" and not r.get("error") and logprog.is_eval_cmd(r.get("cmd", ""))
+                        and logprog.RE_EVAL_DONE.search(r.get("last_line", "")) and not logprog.RE_INTR.search(r.get("last_line", ""))):
+                    r.update(status="done", frac=1.0, label="评测完成", stage="已完成")
+                    fixed = True
+            except Exception:           # noqa: BLE001
+                pass
+        if fixed:
+            self._save()
 
     def _save(self):
         try:

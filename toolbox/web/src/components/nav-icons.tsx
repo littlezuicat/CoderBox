@@ -7,6 +7,7 @@ const COLORS: Record<string, [string, string]> = {
   share: ['#3DDC97', '#16A34A'],
   remote: ['#B794F6', '#7C3AED'],
   online: ['#3CD3C4', '#0E91C9'],
+  library: ['#7C9CFF', '#4F46E5'],
 }
 
 const GLYPH: Record<string, React.ReactNode> = {
@@ -55,6 +56,12 @@ const GLYPH: Record<string, React.ReactNode> = {
     <circle cx="15" cy="7" r="2" />
     <circle cx="9" cy="12" r="2" />
     <circle cx="17" cy="17" r="2" />
+  </>),
+  // 图书馆：书 + 书签
+  library: (<>
+    <path d="M4.2 5.2c0-.9.7-1.6 1.6-1.6h5.4v15.2H5.8c-.9 0-1.6-.7-1.6-1.6z" />
+    <path d="M12.6 3.6h4.9c.9 0 1.6.7 1.6 1.6v12c0 .9-.7 1.6-1.6 1.6h-4.9z" />
+    <path d="M6.4 7.4h2.6M6.4 10.2h2.6" />
   </>),
   // 在线：地球
   online: (<>

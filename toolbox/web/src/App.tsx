@@ -15,6 +15,7 @@ import { NavIcon } from './components/nav-icons'
 import { initSettings, useEvent } from './hooks'
 import { ShareToast } from './components/share-people'
 import ConvertPage from './pages/convert'
+import LibraryPage from './pages/library'
 import OnlinePage from './pages/online'
 import PptPage from './pages/ppt'
 import { Installer, Uninstaller } from './pages/installer'
@@ -33,12 +34,13 @@ const NAV = [
   { key: 'convert', label: '格式转换', icon: <NavIcon k="convert" />, Page: memo(ConvertPage), files: 'files:convert' },
   { key: 'security', label: '设备安全', icon: <NavIcon k="security" />, Page: memo(SecurityPage), files: '' },
   ...(SHOW_VAULT ? [{ key: 'vault', label: '密码', icon: <NavIcon k="vault" />, Page: memo(VaultPage), files: '' }] : []),
+  { key: 'library', label: '图书馆', icon: <NavIcon k="library" />, Page: memo(LibraryPage), files: '' },
   { key: 'online', label: '在线工具', icon: <NavIcon k="online" />, Page: memo(OnlinePage), files: '' },
   { key: 'settings', label: '设置', icon: <NavIcon k="settings" />, Page: memo(SettingsPage), files: '' },
 ]
 
 // 顶部栏（新布局）里每项压成两个字，完整名字放在悬停提示里
-const SHORT: Record<string, string> = { ppt: '定图', convert: '转换', ssh: '主机', security: '安全', vault: '密码', online: '工具', settings: '设置' }
+const SHORT: Record<string, string> = { ppt: '定图', convert: '转换', ssh: '主机', security: '安全', vault: '密码', library: '图书馆', online: '工具', settings: '设置' }
 
 function NavItem({ selected, icon, children, onClick }: any) {
   return (

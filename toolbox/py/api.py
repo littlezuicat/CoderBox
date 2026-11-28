@@ -175,6 +175,99 @@ class Api:
             pass
 
     # ------------------------------------------------------------------ 通用
+    # ---------------- 论文检索/下载（paperdl-service） ----------------
+    @staticmethod
+    def _papers_dir():
+        import os as _os
+        base = _os.environ.get("APPDATA") or _os.path.join(_os.path.expanduser("~"), ".config")
+        d = _os.path.join(base, "MajingToolbox", "papers")
+        _os.makedirs(d, exist_ok=True)
+        return d
+
+    def paperdl_health(self):
+        """服务健康检查：返回 {ok, jobs, pending}"""
+        try:
+            from majing.core import paperdl as _p
+            return {"ok": True, **_p.health()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def paperdl_search(self, title, limit=12):
+        """按文章名检索：S2 检索 + 出版商分类（ieee/elsevier/springer/…）"""
+        try:
+            from majing.core import paperdl as _p
+            return {"ok": True, "items": _p.search(title, limit=int(limit or 12))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def paperdl_submit(self, doi=None, title=None):
+        """建下载任务，返回 job_id"""
+        try:
+            from majing.core import paperdl as _p
+            return {"ok": True, **_p.submit(doi=doi, title=title)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def paperdl_status(self, job_id):
+        """任务状态：pending / running / done / failed"""
+        try:
+            from majing.core import paperdl as _p
+            return {"ok": True, **_p.status(job_id)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def paperdl_download(self, job_id, save_dir=None):
+        """任务完成后把 PDF 拉到本地，返回路径"""
+        try:
+            from majing.core import paperdl as _p
+            target = save_dir or self._papers_dir()
+            path = _p.download(job_id, target)
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def paperdl_open_folder(self):
+        """打开论文保存目录"""
+        _reveal(self._papers_dir())
+        return {"ok": True, "path": self._papers_dir()}
+
+    def paperdl_open_file(self, path):
+        """在资源管理器中定位到某篇 PDF"""
+        if path and os.path.exists(path):
+            _reveal(path)
+            return {"ok": True}
+        return {"ok": False, "error": "文件不存在"}
+
+    def paperdl_fetch(self, title, limit=12):
+        """一步到位（后台线程）：标题 → 检索 → 任务 → 等待 → 落盘，进度用 emit 推送"""
+        try:
+            from majing.core import paperdl as _p
+            items = _p.search(title, limit=int(limit or 12))
+            if not items:
+                return {"ok": False, "error": "未检索到结果"}
+            best = items[0]
+            job = _p.submit(doi=best.get("doi"), title=best.get("title"))
+            jid = job["job_id"]
+
+            def tick(st):
+                self._emit("paperdl", {"job_id": jid, "status": st.get("status")})
+
+            def run():
+                try:
+                    st = _p.wait(jid, timeout=600, on_tick=tick)
+                    if st.get("status") != "done":
+                        self._emit("paperdl_done", {"ok": False, "job_id": jid, "reason": st.get("reason")})
+                        return
+                    path = _p.download(jid, self._papers_dir())
+                    self._emit("paperdl_done", {"ok": True, "job_id": jid, "path": path, "doi": best.get("doi")})
+                except Exception as e:
+                    self._emit("paperdl_done", {"ok": False, "job_id": jid, "reason": str(e)})
+
+            self._thread(run)
+            return {"ok": True, "job_id": jid, "doi": best.get("doi"), "provider": best.get("provider")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def app_info(self):
         return {"version": APP_VERSION, "platform": sys.platform, "settings": {k: v for k, v in settings.data.items() if k != "lit_key"}, "mode": self.mode,
                 "installed": installer.is_installed_run(), "remote": {}}

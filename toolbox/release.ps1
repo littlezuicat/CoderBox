@@ -42,8 +42,12 @@ if (-not $needExe) {
 $exe = Join-Path $PSScriptRoot 'dist\MajingToolbox.exe'
 if ($needExe) {
   "== PyInstaller"
-  .venv\Scripts\pyinstaller.exe --noconfirm --clean MajingToolbox.spec
-  if ($LASTEXITCODE) { throw 'PyInstaller 失败' }
+  $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # PyInstaller 的 INFO 走 stderr，别当成错误
+  try {
+    .venv\Scripts\pyinstaller.exe --noconfirm --clean MajingToolbox.spec 2>&1 | ForEach-Object { "$_" } | Out-Host
+    $pyiCode = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $prevEap }
+  if ($pyiCode) { throw 'PyInstaller 失败' }
   $size = (Get-Item $exe).Length
   "== 整包 $exe  $size 字节  sha256 " + (Get-FileHash $exe -Algorithm SHA256).Hash
   if ($size -lt 15000000) { throw 'exe 太小，打包可能不完整' }
@@ -63,6 +67,7 @@ $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $sshArgs = @('-p', $cfg.ssh_port); if ($cfg.ssh_key) { $sshArgs += @('-i', $cfg.ssh_key) }
 $scpArgs = @('-P', $cfg.ssh_port); if ($cfg.ssh_key) { $scpArgs += @('-i', $cfg.ssh_key) }
 "== 上传到服务器"
+$prevEap2 = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 scp @scpArgs "$PSScriptRoot\deploy\server-publish.sh" "$($cfg.ssh_target):$($cfg.remote_script)"      # 服务器脚本以仓库里这份为准
 if ($LASTEXITCODE) { throw '上传服务器脚本失败' }
 $rPayload = "/tmp/payload-$ver.zip"
@@ -85,7 +90,9 @@ if ($Ffmpeg) {
 $b64 = 'b64:' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Notes))
 "== 服务器发布"
 ssh @sshArgs $cfg.ssh_target "bash $($cfg.remote_script) $args2 --notes $b64"
-if ($LASTEXITCODE) { throw '服务器发布失败（线上没有改动）' }
+$pubCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEap2
+if ($pubCode) { throw '服务器发布失败（线上没有改动）' }
 "完成：$ver 已发布（$(if ($needExe) { '含整包' } else { '仅负载包' })），工具箱会自动更新。"
 # 发布成功后把这次的改动（含版本号）提交进 git（开源仓库：每次改动都要有提交；密钥/构建产物都在 .gitignore 里）
 if (Get-Command git -ErrorAction SilentlyContinue) {

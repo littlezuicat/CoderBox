@@ -5,6 +5,11 @@ import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded'
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded'
 import AutoAwesomeOutlined from '@mui/icons-material/AutoAwesomeOutlined'
 import DeleteSweepOutlined from '@mui/icons-material/DeleteSweepOutlined'
+import ErrorOutline from '@mui/icons-material/ErrorOutline'
+import MarkEmailReadOutlined from '@mui/icons-material/MarkEmailReadOutlined'
+import NotificationsActive from '@mui/icons-material/NotificationsActive'
+import NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined'
+import HourglassTopRounded from '@mui/icons-material/HourglassTopRounded'
 import RefreshRounded from '@mui/icons-material/RefreshRounded'
 import { alpha, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Tooltip, Typography, useTheme } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -17,7 +22,7 @@ import { useEvent } from '../hooks'
 type Exp = {
   id: string; alias: string; user: string; cwd: string; cmd: string; launcher?: string; name: string; gpus: number[]; mem: number; pid: number
   start: number; end: number | null; status: 'running' | 'done' | 'failed' | 'stopped'; frac: number | null; label: string; stage: string
-  gpu_model?: string; note?: string; eta_ts: number | null; eta_src: 'log' | 'rate' | 'elapsed' | 'epoch-eta' | null; last_line: string; metrics: Record<string, string>; log: string; error: string; updated: number
+  gpu_model?: string; note?: string; sub?: boolean; mail?: 'pending' | 'sent' | 'failed'; mail_err?: string; eta_ts: number | null; eta_src: 'log' | 'rate' | 'elapsed' | 'epoch-eta' | null; last_line: string; metrics: Record<string, string>; log: string; error: string; updated: number
 }
 type HostGpu = { index: number; name: string; mem_used: number; mem_total: number; util: number }
 type Hosts = Record<string, { t: number; gpus: HostGpu[] }>
@@ -25,8 +30,8 @@ type Ai = { mode: 'off' | 'haiku' | 'gpt'; ok: boolean | null; error: string; ki
 type Tab = 'run' | 'end'
 type SortKey = 'alias' | 'name' | 'frac' | 'start' | 'end'
 
-const COLS = '92px 140px 122px minmax(240px,2.4fr) minmax(104px,0.7fr) 50px 118px 118px'      // 主机 | 显卡 | 利用率·显存 | 实验（一句话）| 进度 | % | 开始 | 预计结束（已结束页：结束）
-const MIN_W = 1090
+const COLS = '92px 140px 122px minmax(210px,2.4fr) minmax(104px,0.7fr) 50px 118px 118px 34px'      // 主机 | 显卡 | 利用率·显存 | 实验（一句话）| 进度 | % | 开始 | 预计结束（已结束页：结束）
+const MIN_W = 1110
 const AI_NAMES: Record<string, string> = { off: '关闭', haiku: 'Haiku', gpt: 'GPT-6-Luna' }
 const TASK_COLORS = ['#378ADD', '#1D9E75', '#BA7517', '#7F77DD', '#D4537E', '#639922']
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -77,8 +82,8 @@ function Bar({ frac, color, running, dark }: { frac: number | null; color: strin
   )
 }
 
-type RowProps = { e: Exp; host?: { gpus: HostGpu[] }; showHost: boolean; zebra: boolean; now: number; dark: boolean; color: string; ended: boolean; onLog: () => void; onRemove: () => void }
-function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemove }: RowProps) {
+type RowProps = { e: Exp; host?: { gpus: HostGpu[] }; showHost: boolean; zebra: boolean; now: number; dark: boolean; color: string; ended: boolean; onLog: () => void; onRemove: () => void; onSub: () => void }
+function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemove, onSub }: RowProps) {
   const theme = useTheme()
   const [open, setOpen] = useState(false)
   const running = e.status === 'running'
@@ -108,6 +113,17 @@ function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemov
         <Typography sx={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{pct === null ? '—' : `${Math.round(pct)}%`}</Typography>
         <Typography noWrap sx={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{clock(e.start)}</Typography>
         <Typography noWrap sx={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{endText}</Typography>
+        {running ? (
+          <Tooltip title={e.sub ? '已订阅：实验结束后会发邮件通知（点击取消）' : '订阅：实验结束后邮件通知我'}>
+            <IconButton size="small" onClick={(ev) => { ev.stopPropagation(); onSub() }} sx={{ color: e.sub ? 'primary.main' : 'text.disabled' }}>{e.sub ? <NotificationsActive sx={{ fontSize: 19 }} /> : <NotificationsNoneOutlined sx={{ fontSize: 19 }} />}</IconButton>
+          </Tooltip>
+        ) : e.sub ? (
+          <Tooltip title={e.mail === 'sent' ? '已发邮件通知' : e.mail === 'failed' ? `邮件没发出去：${e.mail_err || ''}` : '邮件发送中…'}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', color: e.mail === 'sent' ? 'success.main' : e.mail === 'failed' ? 'error.main' : 'text.disabled' }}>
+              {e.mail === 'sent' ? <MarkEmailReadOutlined sx={{ fontSize: 19 }} /> : e.mail === 'failed' ? <ErrorOutline sx={{ fontSize: 19 }} /> : <HourglassTopRounded sx={{ fontSize: 18 }} />}
+            </Box>
+          </Tooltip>
+        ) : <span />}
       </Box>
       {open && (
         <Box sx={{ px: 1.5, pb: 1.3, pt: 0.2, display: 'flex', flexDirection: 'column', gap: 0.6, fontSize: 12, color: 'text.secondary' }}>
@@ -138,8 +154,38 @@ function Head({ ended, sort, desc, onSort }: { ended: boolean; sort: SortKey; de
   )
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: COLS, columnGap: 1.5, px: 1.5, py: 1, fontSize: 13, fontWeight: 500, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>
-      {cell('主机', 'alias')}{cell('显卡')}{cell('利用率 · 显存')}{cell('实验', 'name')}{cell('进度', 'frac')}{cell('', 'frac', true)}{cell('开始', 'start')}{cell(ended ? '结束' : '预计结束', 'end')}
+      {cell('主机', 'alias')}{cell('显卡')}{cell('利用率 · 显存')}{cell('实验', 'name')}{cell('进度', 'frac')}{cell('', 'frac', true)}{cell('开始', 'start')}{cell(ended ? '结束' : '预计结束', 'end')}{cell('')}
     </Box>
+  )
+}
+
+function SubDialog({ exp, onClose, onDone }: { exp: Exp | null; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => { setErr(''); setBusy(false) }, [exp?.id])
+  const go = async () => {
+    if (!exp) return
+    setBusy(true); setErr('')
+    const r: any = await api.exp_subscribe(exp.id, true)
+    setBusy(false)
+    if (!r.ok) { setErr(r.error || '订阅失败'); return }
+    onDone()
+  }
+  return (
+    <Dialog open={!!exp} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontSize: 16 }}>订阅这个实验？</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }} noWrap>{exp?.note || exp?.name}</Typography>
+        <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
+          它结束时（完成、出错或中途退出），码境服务器会给你码境账号里已验证的邮箱发一封通知邮件，只通知这一次。
+        </Typography>
+        {err && <Typography sx={{ fontSize: 13, color: 'error.main', mt: 1.2 }}>{err}</Typography>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>取消</Button>
+        <Button variant="contained" onClick={go} disabled={busy}>{busy ? '正在确认…' : '确认订阅'}</Button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
@@ -190,6 +236,7 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
   const [now, setNow] = useState(Math.floor(Date.now() / 1000))
   const [logFor, setLogFor] = useState<Exp | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
+  const [subFor, setSubFor] = useState<Exp | null>(null)
   const set = (s: any) => { setItems(s.items || []); setHosts(s.hosts || {}); setLast(s.last_poll || 0); setBusy(!!s.busy); if (s.ai) setAi(s.ai) }
 
   useEffect(() => { api.exp_state().then(set) }, [])
@@ -255,11 +302,12 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
               </Box>
             ) : rows.map((e, i) => (
               <Row key={e.id} e={e} host={hosts[e.alias]} showHost={sort.k !== 'alias' || i === 0 || rows[i - 1].alias !== e.alias} zebra={i % 2 === 1} now={now} dark={dark} color={colorOf(e)} ended={ended}
-                onLog={() => setLogFor(e)} onRemove={() => api.exp_remove(e.id)} />
+                onLog={() => setLogFor(e)} onRemove={() => api.exp_remove(e.id)} onSub={() => (e.sub ? api.exp_subscribe(e.id, false) : setSubFor(e))} />
             ))}
           </Box>
         </Box>
       </Box>
+      <SubDialog exp={subFor} onClose={() => setSubFor(null)} onDone={() => setSubFor(null)} />
       <LogDialog id={logFor?.id ?? null} name={logFor?.name ?? ''} onClose={() => setLogFor(null)} />
     </BasePage>
   )

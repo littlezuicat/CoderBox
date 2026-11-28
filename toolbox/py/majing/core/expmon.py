@@ -19,7 +19,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from majing.core import expnote, logprog, sshhosts
+from majing import APP_VERSION
+from majing.core import account, expnote, logprog, sshhosts
 from majing.settings import _path, settings
 
 log = logging.getLogger("majing.exp")
@@ -300,6 +301,7 @@ class Monitor:
         self.enabled = True
         self._loaded = False
         self._started = False
+        self._mq = queue.Queue()           # 等着发“实验结束”邮件的实验 id
         self._nq = queue.Queue()         # 等着生成一句话说明的实验（一个个来，别同时开好几个 claude）
         self.ai = {"ok": None, "error": "", "kind": ""}
 
@@ -333,6 +335,11 @@ class Monitor:
             self._started = True
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._note_loop, daemon=True).start()
+        threading.Thread(target=self._mail_loop, daemon=True).start()
+        with self._lock:
+            for r in self.items:                  # 上次关掉时还没发出去的，接着发
+                if r.get("sub") and r.get("mail") == "pending" and r["status"] != "running":
+                    self._mq.put(r["id"])
 
     def state(self):
         with self._lock:
@@ -584,6 +591,9 @@ class Monitor:
         rec["updated"] = int(now)
         self._mem.pop(rec["id"], None)
         rec.pop("hist", None)
+        if rec.get("sub"):
+            rec["mail"] = "pending"
+            self._mq.put(rec["id"])
 
     # ---------------------------------------------------------------- 一句话实验说明（Haiku，提取成功一次就不再提取）
     def _want_note(self, rec, mem):
@@ -641,6 +651,68 @@ class Monitor:
             for m in self._mem.values():
                 m.pop("note_next", None)
                 m["note_tries"] = 0
+        self.emit("exp:update", self.state())
+
+    # ---------------------------------------------------------------- 订阅：实验结束发邮件（走码境服务器，发到账号已验证的邮箱）
+    def subscribe(self, rid, on):
+        with self._lock:
+            rec = next((r for r in self.items if r["id"] == rid), None)
+        if not rec:
+            return {"ok": False, "error": "没找到这个实验。"}
+        if on:
+            if rec["status"] != "running":
+                return {"ok": False, "error": "这个实验已经结束了。"}
+            d = account.detail(APP_VERSION)
+            if not d.get("ok"):
+                return {"ok": False, "code": d.get("code"), "error": d.get("error") or "读不到码境账号信息。"}
+            if not d.get("has_email"):
+                return {"ok": False, "code": "no_email", "error": "码境账号还没有绑定邮箱，请先到「设置 → 码境账号」绑定。"}
+            if not d.get("email_verified"):
+                return {"ok": False, "code": "email_unverified", "error": "邮箱还没有验证，请先到「设置 → 码境账号」完成验证。"}
+        with self._lock:
+            rec["sub"] = bool(on)
+            self._save()
+        self.emit("exp:update", self.state())
+        return {"ok": True, "sub": bool(on)}
+
+    def _mail_loop(self):
+        while True:
+            rid = self._mq.get()
+            try:
+                self._mail_one(rid)
+            except Exception as e:      # noqa: BLE001
+                log.warning("发实验结束邮件出错：%s", e)
+
+    def _mail_one(self, rid):
+        with self._lock:
+            rec = next((r for r in self.items if r["id"] == rid), None)
+        if not rec or not rec.get("sub") or rec.get("mail") != "pending":
+            return
+        m = rec.get("metrics") or {}
+        payload = {"id": rid, "status": rec["status"], "name": rec["name"], "note": rec.get("note", ""), "host": rec["alias"],
+                   "gpus": " ".join("GPU%d" % g for g in rec["gpus"]), "start": rec["start"], "end": rec.get("end") or int(time.time()),
+                   "label": rec.get("label", ""), "metrics": {k: m[v] for k, v in (("PSNR", "psnr"), ("SSIM", "ssim"), ("loss", "loss")) if m.get(v)},
+                   "error": rec.get("error", "") if rec["status"] == "failed" else ""}
+        r = account.notify_experiment(APP_VERSION, payload)
+        if r.get("ok"):
+            rec["mail"] = "sent"
+            rec["mail_t"] = int(time.time())
+            rec.pop("mail_err", None)
+            log.info("实验结束邮件已发出：%s", rec["name"])
+        elif r.get("code") in ("no_email", "email_unverified", "unbound", "expired", "unsupported", "smtp_unconfigured", "bad_request"):
+            rec["mail"] = "failed"                # 要人处理的问题，不重试
+            rec["mail_err"] = r.get("error") or "发送失败"
+            log.info("实验结束邮件没发成（%s）：%s", r.get("code"), r.get("error"))
+        else:                                      # 网络 / 限频 / 服务器出错：过一阵再试，最多 6 次
+            rec["mail_tries"] = rec.get("mail_tries", 0) + 1
+            if rec["mail_tries"] >= 6:
+                rec["mail"] = "failed"
+                rec["mail_err"] = r.get("error") or "发送失败"
+            else:
+                delay = (60, 300, 900, 1800, 3600, 7200)[rec["mail_tries"] - 1]
+                threading.Timer(delay, lambda: self._mq.put(rid)).start()
+        with self._lock:
+            self._save()
         self.emit("exp:update", self.state())
 
     # ---------------------------------------------------------------- 给界面的操作

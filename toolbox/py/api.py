@@ -1559,6 +1559,10 @@ class Api:
         expmon.monitor.set_ai(mode)
         return {"ok": True}
 
+    def exp_subscribe(self, rid, on):
+        """订阅 / 取消订阅某个实验：它结束（完成 / 出错 / 中断）时，码境服务器给你已验证的邮箱发一封邮件。"""
+        return expmon.monitor.subscribe(rid, bool(on))
+
     def exp_remove(self, rid):
         expmon.monitor.remove(rid)
         return {"ok": True}
@@ -2191,6 +2195,31 @@ class Api:
 
     def account_unbind(self):
         return account.unbind(APP_VERSION)
+
+    def account_detail(self):
+        return account.detail(APP_VERSION)
+
+    def account_set_username(self, name):
+        return account.set_username(APP_VERSION, name)
+
+    def account_set_bio(self, bio):
+        return account.set_bio(APP_VERSION, bio)
+
+    def account_avatar_pick(self):
+        """弹出选图片对话框，选好就上传当头像。"""
+        import webview
+        dlg = getattr(webview, "FileDialog", None)
+        mode = dlg.OPEN if dlg else webview.OPEN_DIALOG
+        r = self._window.create_file_dialog(mode, file_types=("图片 (*.png;*.jpg;*.jpeg;*.webp;*.bmp)",))
+        if not r:
+            return {"ok": False, "code": "cancel", "error": ""}
+        return account.set_avatar(APP_VERSION, r if isinstance(r, str) else r[0])
+
+    def account_email_send(self, email):
+        return account.email_send(APP_VERSION, email)
+
+    def account_email_verify(self, code):
+        return account.email_verify(APP_VERSION, code)
 
     def update_check(self):
         self._thread(self._update_once)

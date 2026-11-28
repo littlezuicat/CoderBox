@@ -6,7 +6,8 @@ import FolderOutlined from '@mui/icons-material/FolderOutlined'
 import VpnKeyOutlined from '@mui/icons-material/VpnKeyOutlined'
 import InfoOutlined from '@mui/icons-material/InfoOutlined'
 import OpenInNew from '@mui/icons-material/OpenInNew'
-import { Avatar, Box, Button, CircularProgress, Typography } from '@mui/material'
+import EditOutlined from '@mui/icons-material/EditOutlined'
+import { Avatar, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../bridge'
@@ -18,13 +19,95 @@ import { useEvent } from '../hooks'
 // 码境账号（设置页最上面的卡片）。2026-11-24 起显示；要再隐藏就改成 false
 const SHOW_ACCOUNT = true
 
+// 编辑码境账号：头像 / 用户名 / 个性签名 / 邮箱（邮箱要发验证码确认；实验订阅的通知邮件就发到这里）
+function AccountEdit({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
+  const [d, setD] = useState<any>(null)
+  const [name, setName] = useState('')
+  const [bio, setBio] = useState('')
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [sent, setSent] = useState(false)
+  const [msg, setMsg] = useState<{ k: string; ok: boolean; t: string } | null>(null)
+  const [busy, setBusy] = useState('')
+  const load = async () => {
+    const r: any = await api.account_detail()
+    if (r.ok) { setD(r); setName(r.username); setBio(r.bio) } else setMsg({ k: 'all', ok: false, t: r.error || '读不到账号信息' })
+  }
+  useEffect(() => { if (open) { setD(null); setMsg(null); setSent(false); setCode(''); setEmail(''); load() } }, [open])
+  const run = async (k: string, fn: () => Promise<any>, okText: string, after?: (r: any) => void) => {
+    setBusy(k); setMsg(null)
+    const r = await fn()
+    setBusy('')
+    if (r.code === 'cancel') return
+    setMsg({ k, ok: !!r.ok, t: r.ok ? okText : r.error || '操作失败' })
+    if (r.ok) { after?.(r); await load(); onChanged() }
+  }
+  const row = (k: string, label: string, body: React.ReactNode) => (
+    <Box sx={{ mb: 2 }}>
+      <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 0.6 }}>{label}</Typography>
+      {body}
+      {msg?.k === k && <Typography sx={{ fontSize: 12.5, mt: 0.6, color: msg.ok ? 'success.main' : 'error.main' }}>{msg.t}</Typography>}
+    </Box>
+  )
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontSize: 16 }}>编辑码境账号</DialogTitle>
+      <DialogContent>
+        {!d ? (msg ? <Typography color="error" sx={{ fontSize: 13 }}>{msg.t}</Typography> : <CircularProgress size={22} />) : (
+          <>
+            {row('avatar', '头像', (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Avatar src={d.avatar || undefined} sx={{ width: 52, height: 52, bgcolor: 'primary.main', fontWeight: 700 }}>{(d.name || '码')[0]}</Avatar>
+                <Button size="small" variant="outlined" sx={rounded} disabled={busy === 'avatar'} onClick={() => run('avatar', () => api.account_avatar_pick(), '头像已更新')}>{busy === 'avatar' ? '上传中…' : '更换图片'}</Button>
+              </Box>
+            ))}
+            {row('name', '用户名（3-32 位字母或数字，30 天内只能改一次；用于共享本机，需要英文）', (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField size="small" fullWidth value={name} onChange={(e) => setName(e.target.value)} />
+                <Button variant="outlined" sx={rounded} disabled={busy === 'name' || !name.trim() || name.trim().toLowerCase() === d.username} onClick={() => run('name', () => api.account_set_username(name), '用户名已修改')}>保存</Button>
+              </Box>
+            ))}
+            {row('bio', '个性签名', (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField size="small" fullWidth value={bio} onChange={(e) => setBio(e.target.value)} inputProps={{ maxLength: 240 }} />
+                <Button variant="outlined" sx={rounded} disabled={busy === 'bio' || bio.trim() === d.bio} onClick={() => run('bio', () => api.account_set_bio(bio), '已保存')}>保存</Button>
+              </Box>
+            ))}
+            {row('email', `邮箱${d.has_email ? `：${d.email}（${d.email_verified ? '已验证' : '未验证'}）` : '：还没有绑定'} · 实验订阅的通知邮件会发到这里`, (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <TextField size="small" fullWidth placeholder={d.has_email ? '换一个新邮箱' : '输入邮箱'} value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <Button variant="outlined" sx={{ ...rounded, whiteSpace: 'nowrap' }} disabled={busy === 'email' || !email.includes('@')} onClick={() => run('email', () => api.account_email_send(email), '验证码已发到这个邮箱，5 分钟内有效', () => setSent(true))}>发验证码</Button>
+                </Box>
+                {sent && (
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <TextField size="small" fullWidth placeholder="6 位验证码" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                    <Button variant="contained" sx={rounded} disabled={busy === 'verify' || code.length !== 6} onClick={() => run('verify', () => api.account_email_verify(code), '邮箱已验证', () => { setSent(false); setCode(''); setEmail('') })}>验证</Button>
+                  </Box>
+                )}
+                {msg?.k === 'verify' && <Typography sx={{ fontSize: 12.5, color: msg.ok ? 'success.main' : 'error.main' }}>{msg.t}</Typography>}
+              </Box>
+            ))}
+          </>
+        )}
+      </DialogContent>
+      <DialogActions><Button onClick={onClose}>关闭</Button></DialogActions>
+    </Dialog>
+  )
+}
+
 function Account() {
   const [st, setSt] = useState<any>(null)
   const [wait, setWait] = useState<null | { code: string }>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [edit, setEdit] = useState(false)
+  const [email, setEmail] = useState<{ has: boolean; masked: string; ok: boolean } | null>(null)
+  const refresh = () => api.account_status().then(setSt)
+  const loadEmail = () => api.account_detail().then((r: any) => setEmail(r.ok ? { has: r.has_email, masked: r.email, ok: r.email_verified } : null))
 
-  useEffect(() => { api.account_status().then(setSt) }, [])
+  useEffect(() => { refresh() }, [])
+  useEffect(() => { if (st?.bound && !st.offline) loadEmail() }, [st?.bound, st?.offline])
   useEvent('account:event', (r: any) => {
     setWait(null); setBusy(false)
     if (r.state === 'ok') { setSt(r.status); setErr('') }
@@ -56,7 +139,12 @@ function Account() {
               <Typography variant="caption" color="text.secondary">{st.offline ? '暂时连不上服务器，无法确认账号状态' : st.username}</Typography>
             </Box>
           </Box>
-          <Button variant="outlined" color="error" startIcon={<LinkOffOutlined />} sx={{ ...rounded, alignSelf: 'flex-start' }} onClick={unbind}>解除绑定</Button>
+          {email && <Typography variant="caption" color={email.has && email.ok ? 'text.secondary' : 'warning.main'} sx={{ display: 'block', mb: 1.5 }}>{email.has ? `邮箱 ${email.masked}（${email.ok ? '已验证，可接收实验结束通知' : '未验证'}）` : '还没有绑定邮箱，绑定后才能订阅实验结束通知'}</Typography>}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {!st.offline && <Button variant="outlined" startIcon={<EditOutlined />} sx={rounded} onClick={() => setEdit(true)}>编辑</Button>}
+            <Button variant="outlined" color="error" startIcon={<LinkOffOutlined />} sx={rounded} onClick={unbind}>解除绑定</Button>
+          </Box>
+          <AccountEdit open={edit} onClose={() => setEdit(false)} onChanged={() => { refresh(); loadEmail() }} />
         </Box>
       ) : wait ? (
         <Box>

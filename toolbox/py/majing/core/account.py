@@ -187,3 +187,86 @@ def unbind(ua):
             pass          # 服务器没通知到也没关系，本地凭证照删；凭证两周后自动过期
     _forget()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- 资料编辑（用的是码境网站自己的接口）和实验通知
+_ERR_TEXT = {"unbound": "还没有登录码境账号。", "expired": "码境登录已过期，请重新登录。", "network": "连不上码境服务器，请检查网络。"}
+
+
+def _call(method, path, ua, body=None, timeout=15):
+    """带登录凭证调码境接口。返回 {ok, ...服务器返回的字段} 或 {ok: False, code, error}。写操作自动带 CSRF。"""
+    token = _load()
+    if not token:
+        return {"ok": False, "code": "unbound", "error": _ERR_TEXT["unbound"]}
+    headers = _headers(ua)
+    try:
+        if method != "GET":
+            p = _profile(token, ua)
+            if not p:
+                _forget()
+                return {"ok": False, "code": "expired", "error": _ERR_TEXT["expired"]}
+            headers["X-CSRF-Token"] = p["csrf"]
+        r = requests.request(method, BASE + path, json=body, cookies={COOKIE: token}, headers=headers, timeout=timeout)
+    except requests.RequestException:
+        return {"ok": False, "code": "network", "error": _ERR_TEXT["network"]}
+    j = _json(r)
+    if r.status_code == 401:
+        _forget()
+        return {"ok": False, "code": "expired", "error": _ERR_TEXT["expired"]}
+    if r.ok:
+        return {**j, "ok": True}
+    code = j.get("code") or ("rate_limited" if r.status_code == 429 else "unsupported" if r.status_code in (404, 405) else "error")
+    return {"ok": False, "code": code, "error": j.get("error") or "操作失败（%d）。" % r.status_code, "status": r.status_code}
+
+
+def detail(ua):
+    """账号详情（比 status 多：个性签名、邮箱绑定情况）。邮箱只会拿到打码后的样子。"""
+    r = _call("GET", "/api/profile/me", ua)
+    if not r.get("ok"):
+        return r
+    a = r.get("account") or {}
+    avatar = a.get("avatar_url") or ""
+    return {"ok": True, "username": a.get("username") or a.get("email") or "", "name": a.get("display_name") or a.get("username") or "",
+            "avatar": (BASE + avatar) if avatar.startswith("/") else avatar, "bio": a.get("profile_bio") or "",
+            "email": a.get("contact_email_masked") or "", "has_email": bool(a.get("has_contact_email")), "email_verified": bool(a.get("email_verified_at"))}
+
+
+def set_username(ua, name):
+    return _call("POST", "/api/auth/username", ua, {"username": (name or "").strip()})
+
+
+def set_bio(ua, bio):
+    return _call("POST", "/api/profile/bio", ua, {"bio": (bio or "").strip()})
+
+
+def set_avatar(ua, path):
+    """选一张图片当头像：居中裁成正方形、缩到 256 像素、压到 300KB 以内再传。"""
+    import io
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            w, h = im.size
+            side = min(w, h)
+            im = im.crop(((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side)).resize((256, 256), Image.LANCZOS)
+        for q in (90, 80, 70, 55):
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=q)
+            if buf.tell() <= 280_000:
+                break
+    except Exception as e:                       # noqa: BLE001
+        return {"ok": False, "code": "bad_image", "error": "无法读取这张图片：%s" % e}
+    return _call("POST", "/api/auth/avatar", ua, {"image": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
+
+
+def email_send(ua, email):
+    return _call("POST", "/api/auth/email/send", ua, {"email": (email or "").strip()})
+
+
+def email_verify(ua, code):
+    return _call("POST", "/api/auth/email/verify", ua, {"code": (code or "").strip()})
+
+
+def notify_experiment(ua, payload):
+    """实验结束通知：服务器给账号已验证的邮箱发一封固定模板的邮件（同一个 id 只发一次）。"""
+    return _call("POST", "/api/notify/experiment", ua, payload, timeout=20)

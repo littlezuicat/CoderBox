@@ -233,6 +233,7 @@ export const mock: any = {
   },
   // 实验记录的示例数据（浏览器里调界面用）
   exp_state: () => mockExp(),
+  exp_subscribe: async (id: string, on: boolean) => { const it = (S.exp || (S.exp = mockExpItems())).find((x: any) => x.id === id); if (it) it.sub = on; emitLocal('exp:update', mockExp()); return { ok: true, sub: on } },
   exp_ai_set: (m: string) => { S.expAi = m; emitLocal('exp:update', mockExp()); return { ok: true } },
   exp_refresh: () => { setTimeout(() => emitLocal('exp:update', mockExp()), 600); return { ok: true } },
   exp_remove: (id: string) => { S.exp = (S.exp || mockExpItems()).filter((x: any) => x.id !== id); emitLocal('exp:update', mockExp()); return { ok: true } },
@@ -353,6 +354,12 @@ export const mock: any = {
   account_status: () => (S.acct ? { bound: true, name: '任义', username: 'renyi', avatar: '' } : { bound: false }),
   account_login: () => { setTimeout(() => { S.acct = true; emitLocal('account:event', { state: 'ok', status: { bound: true, name: '任义', username: 'renyi', avatar: '' } }) }, 4000); return { ok: true, user_code: 'K7XM-4P9Q', url: 'https://code.zuicat.cn/toolbox-auth.html?code=K7XM-4P9Q' } },
   account_cancel: () => true,
+  account_detail: () => ({ ok: true, username: 'renyi', name: '任义', avatar: '', bio: '', email: S.mail ? 're****yi@qq.com' : '', has_email: !!S.mail, email_verified: !!S.mailOk }),
+  account_set_username: async (n: string) => ({ ok: true, username: n }),
+  account_set_bio: async (b: string) => ({ ok: true, bio: b }),
+  account_avatar_pick: async () => ({ ok: true }),
+  account_email_send: async () => { S.mail = true; return { ok: true, expires_in: 300 } },
+  account_email_verify: async (c: string) => (c === '123456' ? (S.mailOk = true, { ok: true }) : { ok: false, error: '验证码错误，还可尝试 4 次。' }),
   account_unbind: () => { S.acct = false; return { ok: true } },
 }
 setTimeout(() => emitLocal('remote:event', remoteState), 500)

@@ -1303,17 +1303,36 @@ def _upgrade(alias, nc):
             pass
 
 
+def _link_targets(sftp, cwd, items):
+    """符号链接：列目录给的是链接本身（lstat），只能知道“它是个链接”，要 stat 一下才知道指向文件夹还是文件。
+    不处理的话，指向文件夹的链接会被当成文件：图标不对、点开还提示“这是文件夹”。最多解析 300 个，断链保持原样。"""
+    out, n = {}, 0
+    for a in items:
+        if statmod.S_ISLNK(a.st_mode or 0):
+            n += 1
+            if n > 300:
+                break
+            try:
+                out[a.filename] = sftp.stat(posixpath.join(cwd, a.filename))
+            except Exception:                            # noqa: BLE001
+                pass
+    return out
+
+
 def fs_list(alias, path=""):
+    links = {}
     try:
         try:
             with _lease(alias) as (cli, sftp):
                 cwd = sftp.normalize(path or ".")
                 items = sftp.listdir_attr(cwd)
+                links = _link_targets(sftp, cwd, items)
         except (OSError, EOFError, paramiko.SSHException):
             _drop(alias)
             with _lease(alias) as (cli, sftp):
                 cwd = sftp.normalize(path or ".")
                 items = sftp.listdir_attr(cwd)
+                links = _link_targets(sftp, cwd, items)
     except NoSftp as e:
         return {"ok": False, "error": str(e), "nosftp": True}
     except ConnectionError as e:
@@ -1325,7 +1344,13 @@ def fs_list(alias, path=""):
         return {"ok": False, "error": "目录不存在。"}
     except Exception as e:
         return {"ok": False, "error": "读取目录失败：%s" % e}
-    ents = [{"name": a.filename, "dir": statmod.S_ISDIR(a.st_mode or 0), "size": a.st_size or 0, "mtime": a.st_mtime or 0} for a in items]
+    ents = []
+    for a in items:
+        t = links.get(a.filename) or a                   # 符号链接用目标的信息（是不是文件夹、大小、时间）
+        e = {"name": a.filename, "dir": statmod.S_ISDIR(t.st_mode or 0), "size": t.st_size or 0, "mtime": t.st_mtime or 0}
+        if statmod.S_ISLNK(a.st_mode or 0):
+            e["link"] = True
+        ents.append(e)
     ents.sort(key=lambda x: (not x["dir"], x["name"].lower()))
     ta = getattr(cli, "tb_addr", None)
     return {"ok": True, "path": cwd, "entries": ents, "addr": {"host": ta["host"], "port": ta["port"]} if ta else None, "internal": bool(getattr(cli, "tb_internal", False)), "via": getattr(cli, "tb_via", None)}      # addr：实际连上的地址（内网超时会自动换公网）

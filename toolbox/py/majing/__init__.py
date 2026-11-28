@@ -1,3 +1,3 @@
 APP_NAME = "码境工具箱"
-APP_VERSION = "2.0.77"
+APP_VERSION = "2.0.78"
 SITE = "https://www.zuicat.cn/"

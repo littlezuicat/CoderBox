@@ -33,6 +33,9 @@ const LANG_NAME: Record<string, string> = {
   '.gitignore': 'ignore', '.dockerignore': 'ignore', '.env': 'dotenv', 'docker-compose.yml': 'dockercompose', 'docker-compose.yaml': 'dockercompose', 'compose.yaml': 'dockercompose', 'compose.yml': 'dockercompose',
 }
 
+// Seti 里只有 zip 等少数几种压缩格式有图标；tgz、tar.gz、7z 这些常见的也统一用压缩包图标
+const ARCHIVE_EXT = new Set(['tgz', 'tar', 'gz', 'bz2', 'xz', 'zst', 'lz4', 'tbz', 'tbz2', 'txz', '7z', 'rar', 'z', 'lzma', 'cab', 'iso', 'whl', 'egg', 'jar', 'war', 'apk'])
+
 function resolve(name: string, dark: boolean): { ch: string; color: string } {
   const n = name.toLowerCase()
   const has = (m: Map | undefined, k: string) => (m && Object.prototype.hasOwnProperty.call(m, k) ? m[k] : undefined)
@@ -42,6 +45,7 @@ function resolve(name: string, dark: boolean): { ch: string; color: string } {
     const parts = n.split('.')
     for (let i = 1; i < parts.length && !id; i++) id = look(T.fileExtensions, T.light.fileExtensions, parts.slice(i).join('.'))
   }
+  if (!id && ARCHIVE_EXT.has(n.slice(n.lastIndexOf('.') + 1)) && n.includes('.')) id = look(T.fileExtensions, T.light.fileExtensions, 'zip')
   if (!id) {
     let lang = LANG_NAME[n]
     if (!lang) { const i = n.lastIndexOf('.'); if (i >= 0) lang = LANG_EXT[n.slice(i + 1)] }

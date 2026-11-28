@@ -176,6 +176,14 @@ def clean(text):
     return t[:70]                        # 只防模型发疯；太长让它自己压缩（见 ask），界面一行放不下会自动省略
 
 
+_ECHO = re.compile(r"用户要求|压缩成|只输出|不超过\s*\d+\s*个?字|一句话|太长|上次写|输出这一句|请提供|无法(?:判断|确定|生成)|没有(?:足够|提供)")
+
+
+def is_bad(note):
+    """模型把我们的指令原文当成了说明（或者说“信息不足”），这种不能当实验说明。"""
+    return bool(note) and bool(_ECHO.search(note))
+
+
 def _tmp():
     global _tmpdir
     if _tmpdir is None or not os.path.isdir(_tmpdir):
@@ -227,7 +235,7 @@ def _ask_one(provider, ctx, timeout):
     if _AUTH_HINT.search(out[:200]) and len(out) < 200:
         return False, out[:200], "auth"
     note = clean(out)
-    if len(note) < 4:
+    if len(note) < 4 or is_bad(note):
         return False, "模型没有给出有效的说明", "error"
     return True, note, ""
 

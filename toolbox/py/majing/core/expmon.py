@@ -602,7 +602,7 @@ class Monitor:
 
     # ---------------------------------------------------------------- 一句话实验说明（Haiku，提取成功一次就不再提取）
     def _want_note(self, rec, mem):
-        if rec.get("note_v") == NOTE_V or self._mode() == "off":
+        if (rec.get("note_v") == NOTE_V and not expnote.is_bad(rec.get("note"))) or self._mode() == "off":
             return
         now = time.time()
         if mem.get("note_q") or now < mem.get("note_next", 0) or mem.get("note_tries", 0) >= 8:
@@ -626,7 +626,7 @@ class Monitor:
             rec = next((r for r in self.items if r["id"] == rid), None)
         mem = self._mem.setdefault(rid, {})
         mode = self._mode()
-        if not rec or rec.get("note_v") == NOTE_V or mode == "off":
+        if not rec or (rec.get("note_v") == NOTE_V and not expnote.is_bad(rec.get("note"))) or mode == "off":
             mem["note_q"] = False
             return
         ok, text, kind = expnote.ask(ctx, mode)

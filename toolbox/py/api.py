@@ -109,6 +109,7 @@ class Api:
         self._lit_pop_lock = threading.Lock()
         self._lit_rid = 100
         self._lit_hk = litrans.Hotkey(self._lit_on_press)
+        self._vsc_opening = set()          # 正在“准备环境并打开 VS Code”的主机
         self._upd_lock = threading.Lock()                 # 同一时间只允许一轮更新（检查+下载）
         self._acct_code = None
         self._made = set()                # 这个会话里转换生成的输出文件（重新转换时只允许删这些）
@@ -1514,7 +1515,7 @@ class Api:
                 self._emit("vsc:progress", {"alias": alias, "step": step, "pct": pct, "text": msg, "auto": True})
         with self._vsc_lock:
             try:
-                text = vscserver.install(alias, prog)
+                text = vscserver.install(alias, prog, allow_windows=False)         # 自动只管 Linux；Windows 主机（安装包 200MB+）等用户点“在 VSCode 打开”才装
                 st["ok"] = True
                 log.info("自动安装 %s：%s", alias, text)
                 self._emit("vsc:done", {"alias": alias, "ok": True, "text": text, "auto": True})
@@ -1724,9 +1725,10 @@ class Api:
 
     def open_vscode(self, alias, path=""):
         """用本机的 VS Code（Remote-SSH 扩展）打开这台主机：`code --folder-uri vscode-remote://ssh-remote+别名/路径`。
-        主机别名就是 ~/.ssh/config 里的 Host（工具箱的主机列表和它同步），所以连接方式、密钥都沿用。path 为空就打开主目录。"""
+        主机别名就是 ~/.ssh/config 里的 Host（工具箱的主机列表和它同步），所以连接方式、密钥都沿用。path 为空就打开主目录。
+        **打开之前先修复环境**：确认这台主机上有本机 VS Code 对应版本的 VS Code Server、并且真的能跑起来（Windows 主机、连不上外网的服务器不然会卡在
+        “下载 VS Code 服务器失败”）。准备工作放后台线程，进度走 vsc:progress，结束（成功启动 VS Code 或失败）走 vsc:open，立刻返回 {ok, pending}。"""
         import shutil
-        import subprocess
         alias = (alias or "").strip()
         if not alias:
             return {"ok": False, "error": "没有选中主机。"}
@@ -1742,28 +1744,66 @@ class Api:
                     break
         if not code:
             return {"ok": False, "error": "没找到 VS Code。请先安装 VS Code（并装上 Remote - SSH 扩展），或把 code 命令加进 PATH。"}
-        # 告诉 Remote-SSH 这台主机是什么系统，省得它每次问“选择远程主机的系统”（写进 VS Code 用户设置 remote.SSH.remotePlatform）
+        if alias in self._vsc_opening:
+            return {"ok": True, "pending": True}
+        self._vsc_opening.add(alias)
+        self._thread(self._open_vscode_run, alias, (path or "").strip(), code)
+        return {"ok": True, "pending": True}
+
+    def _open_vscode_run(self, alias, path, code):
+        import subprocess
+        log = logging.getLogger("majing.vscode")
+        last = [None, -1, 0.0]
+
+        def prog(step, pct, msg):
+            now = time.time()
+            if (step, pct) != (last[0], last[1]) and (step != last[0] or now - last[2] >= 0.8 or pct in (0, 100)):
+                last[0], last[1], last[2] = step, pct, now
+                self._emit("vsc:progress", {"alias": alias, "step": step, "pct": pct, "text": msg})
+
+        def finish(ok, err="", uri=""):
+            self._vsc_opening.discard(alias)
+            self._emit("vsc:open", {"alias": alias, "ok": ok, "error": err, "uri": uri})
         try:
-            from majing.core import vscset
-            uname = sshhosts.detect_os(sshhosts.exec_client(alias))
-            plat = "windows" if uname == "Windows" else "macOS" if uname == "Darwin" else "linux"
-            if not vscset.set_platform(alias, plat):
-                logging.getLogger("majing.vscode").info("没改 VS Code 设置（settings.json 结构看不懂）")
-        except Exception as e:                                # noqa: BLE001  探测/写设置失败不影响打开，最多它自己再问一次
-            logging.getLogger("majing.vscode").info("设置 remotePlatform 失败：%s", e)
-        p = (path or "").strip()
-        if not p:
-            r = sshhosts.fs_list(alias, "")
-            p = r.get("path") if r.get("ok") else ""
-        from urllib.parse import quote
-        uri = "vscode-remote://ssh-remote+%s%s" % (alias, quote(p if p.startswith("/") else "/" + p if p else "", safe="/"))      # 路径里有中文/空格要转义
-        args = ["--folder-uri", uri] if p else ["--remote", "ssh-remote+" + alias]
-        try:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-            subprocess.Popen(["cmd", "/c", code, *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
-        except OSError as e:
-            return {"ok": False, "error": "启动 VS Code 失败：%s" % e}
-        return {"ok": True, "uri": uri}
+            prog("check", 0, "正在检查 %s 的环境…" % alias)
+            plat = "linux"
+            # 告诉 Remote-SSH 这台主机是什么系统，省得它每次问“选择远程主机的系统”（写进 VS Code 用户设置 remote.SSH.remotePlatform）
+            try:
+                from majing.core import vscset
+                uname = sshhosts.detect_os(sshhosts.exec_client(alias))
+                plat = "windows" if uname == "Windows" else "macOS" if uname == "Darwin" else "linux"
+                if not vscset.set_platform(alias, plat):
+                    log.info("没改 VS Code 设置（settings.json 结构看不懂）")
+            except Exception as e:                            # noqa: BLE001  探测/写设置失败不影响打开，最多它自己再问一次
+                log.info("设置 remotePlatform 失败：%s", e)
+            # 修复环境：装好并确认服务端能运行；失败就不打开 VS Code（它打开了也只会报“无法建立连接”），把原因告诉用户
+            if plat in ("linux", "windows"):
+                with self._vsc_lock:
+                    try:
+                        text = vscserver.install(alias, prog)
+                        log.info("打开 VS Code 前准备 %s：%s", alias, text)
+                    except Exception as e:                    # noqa: BLE001
+                        log.warning("打开 VS Code 前准备 %s 失败：%s", alias, e)
+                        finish(False, "没能准备好服务器环境：%s" % e)
+                        return
+            p = path
+            if not p:
+                r = sshhosts.fs_list(alias, "")
+                p = r.get("path") if r.get("ok") else ""
+            from urllib.parse import quote
+            uri = "vscode-remote://ssh-remote+%s%s" % (alias, quote(p if p.startswith("/") else "/" + p if p else "", safe="/"))      # 路径里有中文/空格要转义
+            args = ["--folder-uri", uri] if p else ["--remote", "ssh-remote+" + alias]
+            prog("launch", 100, "环境没问题，正在打开 VS Code…")
+            try:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                subprocess.Popen(["cmd", "/c", code, *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            except OSError as e:
+                finish(False, "启动 VS Code 失败：%s" % e)
+                return
+            finish(True, uri=uri)
+        except Exception as e:                                # noqa: BLE001
+            log.exception("打开 VS Code 出错")
+            finish(False, str(e))
 
     def ssh_drag(self, alias, items):
         """把服务器上选中的文件从窗口里拖出去（拖到资源管理器/桌面）：虚拟文件，拖的时候不下载，放下的那一刻系统才来读，资源管理器自己出进度框。

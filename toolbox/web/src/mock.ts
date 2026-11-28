@@ -272,7 +272,13 @@ export const mock: any = {
     return { ok: true }
   },
   open_terminal: () => ({ ok: true }),
-  open_vscode: async (_alias: string, _path?: string) => ({ ok: true }),
+  open_vscode: async (alias: string, _path?: string) => {
+    ;(async () => {
+      for (const [pct, text] of [[0, '正在检查环境…'], [30, '正在下载 Windows 服务端（x64）…'], [70, '正在上传到主机…'], [100, '环境没问题，正在打开 VS Code…']] as [number, string][]) { emitLocal('vsc:progress', { alias, step: 'x', pct, text }); await sleep(700) }
+      emitLocal('vsc:open', { alias, ok: true })
+    })()
+    return { ok: true, pending: true }
+  },
   update_check: () => true,
   set_titlebar: () => true,
   win_dim: () => true,

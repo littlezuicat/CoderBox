@@ -830,8 +830,13 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
   const [fileHosts, setFileHosts] = useState<string[]>([])
   const [dlg, setDlg] = useState<null | { host: Host | null }>(null)
   const [vscNote, setVscNote] = useState<Record<string, string>>({})      // 后台自动装 VS Code Server 的进度小字（按主机）
-  useEvent('vsc:progress', (e: any) => { if (e.auto) setVscNote((m) => ({ ...m, [e.alias]: `正在后台给服务器装 VS Code Server ${e.pct ? e.pct + '%' : ''}` })) })
+  const [vscBusy, setVscBusy] = useState<Record<string, boolean>>({})      // 正在“准备环境并用 VS Code 打开”的主机
+  useEvent('vsc:progress', (e: any) => setVscNote((m) => ({ ...m, [e.alias]: e.auto ? `正在后台给服务器装 VS Code Server ${e.pct ? e.pct + '%' : ''}` : `准备 VS Code 环境：${e.text}` })))
   useEvent('vsc:done', (e: any) => { if (e.auto) setVscNote((m) => { const n = { ...m }; delete n[e.alias]; return n }) })
+  useEvent('vsc:open', (e: any) => {
+    setVscBusy((m) => ({ ...m, [e.alias]: false })); setVscNote((m) => { const n = { ...m }; delete n[e.alias]; return n })
+    setNote(e.ok ? `已用 VS Code 打开 ${e.alias}（环境已确认没问题）` : `${e.alias}：${e.error || '没能打开 VS Code'}`)
+  })
   const [note, setNote] = useState('')
   const [share, setShare] = useState<any>({ on: false })
   const [shareOpen, setShareOpen] = useState(false)
@@ -914,8 +919,9 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
   const openTerm = (a: string) => { if (ide) { picked.current = true; setSel(a); return } picked.current = true; setSel(a); setTab(1); setTermHosts((l) => (l.includes(a) ? l : [...l, a])) }
   // 用本机的 VS Code（Remote-SSH）打开这台主机；连接和密钥用的就是 ~/.ssh/config 里这台的配置
   const openVscode = async (alias: string) => {
-    const r = await api.open_vscode(alias, CUR_DIR[alias] || '')
-    setNote(r?.ok ? `已用 VS Code 打开 ${alias}（第一次连接要等它在服务器上准备一会儿）` : `${alias}：${r?.error || '没能打开 VS Code'}`)
+    setVscBusy((m) => ({ ...m, [alias]: true })); setNote('')
+    const r = await api.open_vscode(alias, CUR_DIR[alias] || '')       // 先在后台修复/确认服务器环境，没问题才启动 VS Code；结束时收到 vsc:open
+    if (!r?.ok) { setVscBusy((m) => ({ ...m, [alias]: false })); setNote(`${alias}：${r?.error || '没能打开 VS Code'}`) }
   }
   const choose = (a: string) => { if (a === sel) return; picked.current = true; setSel(a); if (ide) return; if (tab === 1) openTerm(a); else if (tab === 0) openFiles(a) }
   const openGpu = () => { picked.current = true; setTab(2) }
@@ -1041,7 +1047,7 @@ export default function SshPage({ active, ide }: { active?: boolean; ide?: boole
                 <Box sx={{ flex: 1, minWidth: 8 }} />
                 <SysInfoBar alias={cur.alias} connected={chk[cur.alias]?.st === 'ok'} info={sysInfo} setInfo={setSysInfo} hidden />
                 <Tooltip title="用本机的 VS Code（Remote-SSH）打开这台主机"><span>
-                  <Button size="small" color="inherit" startIcon={<VsCodeIcon />} sx={{ ...rounded, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 'max-content', fontWeight: 600, px: 1.2, textTransform: 'none' }} disabled={chk[cur.alias]?.st === 'checking'} onClick={() => openVscode(cur.alias)}>在 VSCode 打开</Button>
+                  <Button size="small" color="inherit" startIcon={<VsCodeIcon />} sx={{ ...rounded, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 'max-content', fontWeight: 600, px: 1.2, textTransform: 'none' }} disabled={chk[cur.alias]?.st === 'checking' || !!vscBusy[cur.alias]} onClick={() => openVscode(cur.alias)}>{vscBusy[cur.alias] ? '正在准备环境…' : '在 VSCode 打开'}</Button>
                 </span></Tooltip>
                 <Tooltip title="在系统终端里打开"><IconButton size="small" onClick={() => api.open_terminal(cur.alias, CUR_DIR[cur.alias] || '')}><TerminalOutlined fontSize="small" /></IconButton></Tooltip>
               </Box>

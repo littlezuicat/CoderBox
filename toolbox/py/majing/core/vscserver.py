@@ -2,7 +2,7 @@
 """一键给 SSH 主机装 VS Code Server。
 VS Code 的 Remote-SSH 默认让服务器自己去微软站点下载服务端，服务器上不了外网（国内机器常见）就会卡在 “Downloading with wget”。
 这里换成：本机下载（走本机网络/代理）→ 经已有的 SSH 连接上传 → 在服务器上解压到 ~/.vscode-server/bin/<提交号>/。
-提交号取本机正在用的 VS Code（`code --version`），必须和本机 VS Code 一致，Remote-SSH 才认。只支持 Linux 主机。"""
+提交号取本机正在用的 VS Code（`code --version`），必须和本机 VS Code 一致，Remote-SSH 才认。Linux 主机自动装；Windows 主机只在用户点“在 VSCode 打开”时装（安装包 200MB+）。"""
 import glob
 import json
 import logging
@@ -89,11 +89,13 @@ def local_vscode():
 MIRROR = "https://www.zuicat.cn/toolbox/vscode-server"       # 码境服务器预取的镜像（deploy/vsc-mirror）；MAJING_VSC_MIRROR 可改，设成空串就不用
 
 
-def _sources(commit, arch, quality):
+def _sources(commit, arch, quality, win=False):
     """下载地址，按优先级：测试用的 MAJING_VSC_URL（只用它）／码境镜像（只有稳定版）／微软官方。同一个提交的安装包各处字节一致，所以断点续传可以跨源接着下。"""
     env = os.environ.get("MAJING_VSC_URL")
     if env:
         return [env.format(commit=commit, arch=arch, quality=quality)]
+    if win:                                                      # Windows 服务端（zip）镜像里没有，直接走微软
+        return ["https://update.code.visualstudio.com/commit:%s/server-win32-%s/%s" % (commit, arch, quality)]
     out = []
     mirror = os.environ.get("MAJING_VSC_MIRROR", MIRROR)
     if mirror and quality == "stable":
@@ -102,7 +104,7 @@ def _sources(commit, arch, quality):
     return out
 
 
-def _download(urls, dest, prog):
+def _download(urls, dest, prog, magic=b"\x1f\x8b", keep="vscode-server-*-linux-*"):
     """下载到 dest。urls 是按优先级排的几个源（字符串也行）：前面的源没有这个文件（404）或连不上就换下一个，最后一个源重试到底。
     支持断点续传（.part 里已有的接着下）和网络中断自动重试：本机到微软的网络常常只有几百 KB/s，安装包 230MB 上下，一次下不完很正常。"""
     if isinstance(urls, str):
@@ -160,12 +162,12 @@ def _download(urls, dest, prog):
     if not done:
         raise RuntimeError("本机下载一直失败：%s（检查本机网络或代理，已下的部分会保留，下次接着下）" % last)
     with open(part, "rb") as f:
-        magic = f.read(2)
-    if magic != b"\x1f\x8b" or os.path.getsize(part) < 5_000_000:
+        magic_read = f.read(len(magic))
+    if magic_read != magic or os.path.getsize(part) < 5_000_000:
         os.remove(part)
         raise RuntimeError("下载到的不是有效的安装包（可能被网络拦截了）。")
     os.replace(part, dest)
-    for old in glob.glob(os.path.join(os.path.dirname(dest), "vscode-server-*")):          # 旧版本的安装包不留，每个 230MB
+    for old in glob.glob(os.path.join(os.path.dirname(dest), keep)):          # 旧版本的安装包不留，每个 230MB
         if os.path.abspath(old) != os.path.abspath(dest):
             try:
                 os.remove(old)
@@ -173,8 +175,95 @@ def _download(urls, dest, prog):
                 pass
 
 
-def install(alias, prog):
-    """prog(step, pct, text)。成功返回说明文字，失败抛 RuntimeError（文字直接给用户看）。"""
+def _ps(cli, script, timeout=180):
+    """在 Windows 主机上跑一段 PowerShell。用 -EncodedCommand（UTF-16LE 的 base64）传，免得路径、引号、默认 shell 是 cmd 还是 PowerShell 带来的转义问题。"""
+    import base64
+    enc = base64.b64encode(script.encode("utf-16-le")).decode()
+    return sshhosts._run(cli, "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + enc, timeout)
+
+
+def _install_windows(alias, cli, sftp, loc, prog):
+    """Windows 主机：本机下载 server-win32 的 zip → SFTP 上传 → 在主机上用 tar（没有就 Expand-Archive）解压到用户目录下的 .vscode-server/bin/<提交号>，再跑一下 node.exe 确认能用。"""
+    commit, quality = loc["commit"], loc["quality"]
+    _, out, _ = _ps(cli, "[Console]::Out.Write($env:PROCESSOR_ARCHITECTURE)", 30)
+    pa = "".join(ch for ch in (out or "") if ch.isalnum()).upper()          # 只留字母数字：默认 shell 是 cmd 时输出里可能夹着引号
+    arch = {"AMD64": "x64", "X64": "x64", "ARM64": "arm64"}.get(pa)
+    if not arch:
+        raise RuntimeError("这台 Windows 主机的处理器架构（%s）VS Code 服务端不支持。" % (pa or "未知"))
+    home = sftp.normalize(".")                                   # 形如 /C:/Users/name
+    bindir = "%s/.vscode-server/bin/%s" % (home, commit)
+    try:
+        sftp.stat(bindir + "/node.exe")
+        sftp.stat(bindir + "/bin/code-server.cmd")
+        have = True
+    except OSError:
+        have = False
+    name = "vscode-server-%s-win32-%s.zip" % (commit[:10], arch)
+    if not have:
+        local = os.path.join(_cache_dir(), name)
+        prog("download", 0, "正在下载 Windows 服务端（%s）…" % arch)
+        try:
+            _download(_sources(commit, arch, quality, win=True), local, prog, magic=b"PK", keep="vscode-server-*-win32-*")
+        except RuntimeError:
+            raise
+        except Exception as e:                                   # noqa: BLE001
+            raise RuntimeError("本机下载失败：%s（检查本机网络或代理）" % e)
+        prog("upload", 0, "正在上传到 %s…" % alias)
+        for d in (home + "/.vscode-server", home + "/.vscode-server/bin"):
+            try:
+                sftp.mkdir(d)
+            except OSError:
+                pass
+        remote = "%s/.vscode-server/%s" % (home, name)
+        size = os.path.getsize(local)
+        with open(local, "rb") as f:
+            sftp.putfo(f, remote + ".part", callback=lambda a, b: prog("upload", int(a * 100 / (b or size)), "正在上传 %.1f / %.1f MB" % (a / 1048576, (b or size) / 1048576)))
+        try:
+            sftp.remove(remote)
+        except OSError:
+            pass
+        sftp.rename(remote + ".part", remote)
+        prog("extract", 0, "正在主机上解压…")
+        script = r"""
+$ErrorActionPreference = 'Stop'
+$base = Join-Path $env:USERPROFILE '.vscode-server'
+$d = Join-Path $base 'bin\COMMIT'
+$z = Join-Path $base 'ZIPNAME'
+if (Test-Path $d) { Remove-Item $d -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $d | Out-Null
+$ok = $false
+if (Get-Command tar -ErrorAction SilentlyContinue) { tar -xf $z -C $d --strip-components=1; if ($LASTEXITCODE -eq 0) { $ok = $true } }
+if (-not $ok) {
+  $t = Join-Path $base 'unzip-tmp'
+  if (Test-Path $t) { Remove-Item $t -Recurse -Force }
+  Expand-Archive -LiteralPath $z -DestinationPath $t -Force
+  Get-ChildItem (Join-Path $t 'vscode-server-win32-ARCH') | Move-Item -Destination $d -Force
+  Remove-Item $t -Recurse -Force
+}
+if (-not (Test-Path (Join-Path $d 'node.exe'))) { Remove-Item $d -Recurse -Force; throw 'node.exe missing after extract' }
+New-Item -ItemType File -Force -Path (Join-Path $d '0') | Out-Null
+Remove-Item $z -Force -ErrorAction SilentlyContinue
+Write-Output OK
+""".replace("COMMIT", commit).replace("ZIPNAME", name).replace("ARCH", arch)
+        _, o, e = _ps(cli, script, 600)
+        if "OK" not in o:
+            raise RuntimeError("在主机上解压失败：%s" % ((e or o).strip()[:200] or "未知原因（磁盘满了？）"))
+    # 清掉上次卡住的安装锁；再跑一下 node.exe，确认服务端在这台主机上真的能启动
+    check = r"""
+Get-ChildItem (Join-Path $env:USERPROFILE '.vscode-server\bin') -Filter 'vscode-remote-lock.*.COMMIT' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+& (Join-Path $env:USERPROFILE '.vscode-server\bin\COMMIT\node.exe') --version
+""".replace("COMMIT", commit)
+    prog("verify", 90, "正在确认服务端能运行…")
+    rc, o, e = _ps(cli, check, 60)
+    if rc != 0 or not (o or "").strip().startswith("v"):
+        raise RuntimeError("服务端装上了但在主机上跑不起来：%s" % ((e or o).strip()[:200] or "node.exe 没有输出"))
+    prog("done", 100, "完成")
+    return have, "Windows"
+
+
+def install(alias, prog, allow_windows=True):
+    """prog(step, pct, text)。成功返回说明文字，失败抛 RuntimeError（文字直接给用户看）。装完会在主机上跑一下服务端的 node 确认能运行。
+    Linux 主机自动装；Windows 主机要 allow_windows（用户点“在 VSCode 打开”时才传），因为安装包 200MB+。"""
     prog("check", 0, "正在检查本机 VS Code…")
     loc = local_vscode()
     if not loc:
@@ -189,7 +278,14 @@ def install(alias, prog):
         raise RuntimeError("连不上 %s：%s" % (alias, e))
     parts = out.split()
     if len(parts) < 2 or parts[0] != "Linux":
-        raise RuntimeError("这台主机不是 Linux，暂不支持（Windows 主机请让 VS Code 自己装）。")
+        if len(parts) >= 2 and parts[0] == "Darwin":
+            raise RuntimeError("这台主机是 macOS，暂不支持自动准备（让 VS Code 自己装）。")
+        if not allow_windows:
+            raise RuntimeError("这台主机不是 Linux，跳过。")
+        have, _os = _install_windows(alias, cli, sftp, loc, prog)
+        if have:
+            return "%s 上本来就装好了这个版本的 VS Code Server，已确认能运行。" % alias
+        return "已在 %s 上装好 VS Code Server（%s），已确认能运行。" % (alias, loc.get("version") or commit[:10])
     arch = _ARCH.get(parts[1])
     if not arch:
         raise RuntimeError("不认识的处理器架构：%s" % parts[1])
@@ -231,7 +327,12 @@ def install(alias, prog):
             raise RuntimeError("在服务器上解压失败：%s" % ((err or out).strip()[:200] or "未知原因（磁盘满了？）"))
     # 清掉上次卡住留下的安装锁（锁文件名里带这个提交号），否则 VS Code 会一直等它
     sshhosts._run(cli, "sh -c " + shlex.quote('rm -f "$HOME"/.vscode-server/bin/vscode-remote-lock.*.%s' % commit), 10)
+    # 跑一下服务端自带的 node，确认真的能启动（系统太旧、缺库时会在这里暴露，而不是等 VS Code 连上去才报“无法建立连接”）
+    prog("verify", 90, "正在确认服务端能运行…")
+    rc, o, e = sshhosts._run(cli, "sh -c " + shlex.quote('"$HOME"/.vscode-server/bin/%s/node --version' % commit), 30)
+    if rc != 0 or not o.strip().startswith("v"):
+        raise RuntimeError("服务端装上了但在这台服务器上跑不起来：%s（系统版本太旧或缺系统库？）" % ((e or o).strip()[:200] or "没有输出"))
     prog("done", 100, "完成")
     if have:
-        return "%s 上本来就装好了这个版本的 VS Code Server，只清掉了卡住的安装锁。回到 VS Code 重新连接就行。" % alias
-    return "已在 %s 上装好 VS Code Server（%s）。回到 VS Code 重新连接就行。" % (alias, loc.get("version") or commit[:10])
+        return "%s 上本来就装好了这个版本的 VS Code Server，已确认能运行。回到 VS Code 重新连接就行。" % alias
+    return "已在 %s 上装好 VS Code Server（%s），已确认能运行。回到 VS Code 重新连接就行。" % (alias, loc.get("version") or commit[:10])

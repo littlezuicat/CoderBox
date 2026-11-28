@@ -235,7 +235,14 @@ export const mock: any = {
       return { ok: true, b64: X.write(wb, { type: 'base64', bookType: 'xlsx' }), size: 1, mtime: 0 }
     }
     if (ext === 'pdf') {
-      const pdf = ['%PDF-1.4', '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj', '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj', '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 160]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj', '4 0 obj<</Length 44>>stream', 'BT /F1 24 Tf 30 80 Td (Hello PDF) Tj ET', 'endstream endobj', '5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj', 'trailer<</Root 1 0 R/Size 6>>', '%%EOF'].join(String.fromCharCode(10))
+      const NP = 5, objs: string[] = ['<</Type/Catalog/Pages 2 0 R>>', '<</Type/Pages/Kids[' + Array.from({ length: NP }, (_, i) => (3 + i * 2) + ' 0 R').join(' ') + ']/Count ' + NP + '>>']
+      for (let i = 0; i < NP; i++) {
+        const t = 'BT /F1 24 Tf 40 200 Td (Page ' + (i + 1) + ' Hello PDF) Tj 0 -40 Td (search me ' + (i + 1) + ') Tj ET'
+        objs.push('<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 300]/Contents ' + (4 + i * 2) + ' 0 R/Resources<</Font<</F1 ' + (3 + NP * 2) + ' 0 R>>>>>>')
+        objs.push('<</Length ' + t.length + '>>stream' + String.fromCharCode(10) + t + String.fromCharCode(10) + 'endstream')
+      }
+      objs.push('<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>')
+      const pdf = '%PDF-1.4' + String.fromCharCode(10) + objs.map((o, i) => (i + 1) + ' 0 obj' + o + 'endobj').join(String.fromCharCode(10)) + String.fromCharCode(10) + 'trailer<</Root 1 0 R/Size ' + (objs.length + 1) + '>>' + String.fromCharCode(10) + '%%EOF'
       return { ok: true, b64: btoa(pdf), size: pdf.length, mtime: 0 }
     }
     return { ok: true, b64: enc(new TextEncoder().encode(f.text || '')), size: 1, mtime: 0 }

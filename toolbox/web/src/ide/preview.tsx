@@ -59,11 +59,29 @@ export const freePreview = (pv?: Loaded) => { if (pv?.url) URL.revokeObjectURL(p
 
 const sizeText = (n: number) => (n >= MB ? (n / MB).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB')
 
+// 滚轮/捏合缩放的系数：跟滚动量成比例。鼠标滚轮一格 deltaY≈±100（约 1.2 倍）；触控板双指捏合会连发很多个很小的 deltaY（带 ctrlKey），按同样的倍率会放大几十倍，所以小量走更灵敏但平滑的系数
+export const wheelFactor = (e: { deltaY: number; deltaMode?: number }) => {
+  const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+  const k = Math.abs(dy) < 40 ? 0.008 : 0.002
+  return Math.exp(Math.max(-60, Math.min(60, -dy)) * k)
+}
+// 在元素上挂“按住 Ctrl 的滚轮/触控板捏合”缩放；必须用原生监听（React 的 onWheel 是被动的，拦不住浏览器自己的页面缩放）。不按 Ctrl 的滚轮照常滚动内容
+export const useCtrlWheel = (ref: React.RefObject<HTMLElement | null>, on: (factor: number) => void) => {
+  const cb = useRef(on); cb.current = on
+  useEffect(() => {
+    const el = ref.current; if (!el) return
+    const h = (e: WheelEvent) => { if (!e.ctrlKey) return; e.preventDefault(); cb.current(wheelFactor(e)) }
+    el.addEventListener('wheel', h, { passive: false })
+    return () => el.removeEventListener('wheel', h)
+  }, [])
+}
+
 // ---------------- 图片：适应窗口，滚轮缩放，双击在“适应/原始大小”之间切换 ----------------
 function ImageView({ pv, dark, onMeta }: { pv: Loaded; dark: boolean; onMeta: (s: string) => void }) {
   const [z, setZ] = useState(0)                           // 0 = 适应窗口；其它是缩放倍数
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
   const box = useRef<HTMLDivElement>(null)
+  useCtrlWheel(box, (k) => zoomBy(k))
   const zoomBy = (k: number) => setZ((v) => Math.min(16, Math.max(0.05, (v || fitScale()) * k)))
   const fitScale = () => {
     if (!nat || !box.current) return 1
@@ -75,7 +93,7 @@ function ImageView({ pv, dark, onMeta }: { pv: Loaded; dark: boolean; onMeta: (s
     : 'linear-gradient(45deg,#e9e9ee 25%,transparent 25%,transparent 75%,#e9e9ee 75%),linear-gradient(45deg,#e9e9ee 25%,#fff 25%,#fff 75%,#e9e9ee 75%)'
   return (
     <Box sx={{ position: 'absolute', inset: 0 }}>
-      <Box ref={box} onWheel={(e) => { if (e.ctrlKey || !z) { e.preventDefault?.() } zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15) }}
+      <Box ref={box}
         sx={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'flex', backgroundImage: checker, backgroundSize: '20px 20px', backgroundPosition: '0 0, 10px 10px' }}>
         <img src={pv.url} alt="" draggable={false} onDoubleClick={() => setZ(z ? 0 : 1)}
           onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}

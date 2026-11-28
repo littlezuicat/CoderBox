@@ -9,6 +9,8 @@ import ZoomOutRounded from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 
+import { useCtrlWheel } from './preview'
+
 let pdfjsP: Promise<any> | null = null
 export const pdfjs = () => (pdfjsP ??= (async () => {
   const lib = await import('pdfjs-dist')
@@ -112,6 +114,7 @@ export default function PdfView({ pv, dark, onMeta }: { pv: { bytes?: Uint8Array
   }, [])
   useEffect(() => { if (doc) onMeta(`${doc.numPages} 页 · ${sizeText(pv.size)}`) }, [doc])
 
+  useCtrlWheel(wrap, (k) => zoomBy(k))
   const setScale = (z: string) => { setZoom(z); if (app.current) app.current.viewer.currentScaleValue = z }
   const zoomBy = (k: number) => {
     const v = app.current?.viewer; if (!v) return
@@ -160,7 +163,7 @@ export default function PdfView({ pv, dark, onMeta }: { pv: { bytes?: Uint8Array
           </Box>
         )}
         <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
-          <Box ref={wrap} onWheel={(e) => { if (e.ctrlKey) { e.preventDefault?.(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1) } }}
+          <Box ref={wrap}
             sx={{ position: 'absolute', inset: 0, overflow: 'auto', '& .pdfViewer .page': { margin: '8px auto', border: 'none', filter: 'drop-shadow(0 1px 4px rgba(0,0,0,.3))' } }}>
             <div ref={viewerEl} className="pdfViewer" />
           </Box>

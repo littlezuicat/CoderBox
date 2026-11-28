@@ -562,7 +562,12 @@ function FilesPane({ alias, active, onResult }: { alias: string; active: boolean
 // ----------------------------------------------------------------------------------- 内嵌命令行（一台主机可以开多个会话）
 // 终端配色：跟着界面主题走（亮色主题用白底，深色主题用深底）
 const TERM_THEME = {
-  dark: { background: '#1e1f27', foreground: '#e6e6e6', cursor: '#9fc3ff', selectionBackground: '#3b4a6b' },
+  // 深色：底色用界面面板色 #282A36（和编辑器一致，不再接近纯黑），16 色用 Dracula 的配色（它的底色就是 #282A36，彩色在这个底上最舒服）
+  dark: {
+    background: '#282A36', foreground: '#f2f2f0', cursor: '#9fc3ff', cursorAccent: '#282A36', selectionBackground: '#44475a',
+    black: '#3b3e50', red: '#ff6e6e', green: '#5af78e', yellow: '#f4f99d', blue: '#8fb4ff', magenta: '#ff92d0', cyan: '#9aedfe', white: '#d8dae6',
+    brightBlack: '#6c7189', brightRed: '#ff8a8a', brightGreen: '#80ffa8', brightYellow: '#fbfdb4', brightBlue: '#b3ccff', brightMagenta: '#ffb0de', brightCyan: '#b9f3ff', brightWhite: '#ffffff',
+  },
   light: {
     background: '#ffffff', foreground: '#1f2328', cursor: '#0969da', cursorAccent: '#ffffff', selectionBackground: '#b6d4fe',
     black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#7d4e00', blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',

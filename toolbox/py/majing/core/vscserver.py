@@ -109,14 +109,28 @@ def _sources(commit, arch, quality, win=False):
     return out
 
 
+def _zip_ok(path):
+    """zip 完整性：能打开且每个文件的校验和都对（218MB 约几秒）。缓存里的半截包、被别的进程同时往里写过的包，靠它挡掉。"""
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            return bool(z.namelist()) and z.testzip() is None
+    except Exception:                                            # noqa: BLE001
+        return False
+
+
 def _download(urls, dest, prog, magic=b"\x1f\x8b", keep="vscode-server-*-linux-*"):
     """下载到 dest。urls 是按优先级排的几个源（字符串也行）：前面的源没有这个文件（404）或连不上就换下一个，最后一个源重试到底。
     支持断点续传（.part 里已有的接着下）和网络中断自动重试：本机到微软的网络常常只有几百 KB/s，安装包 230MB 上下，一次下不完很正常。"""
     if isinstance(urls, str):
         urls = [urls]
     if os.path.isfile(dest) and os.path.getsize(dest) > 5_000_000:
-        prog("download", 100, "本机已有下载好的安装包，直接用")
-        return
+        prog("download", 0, "正在检查本机已下载的安装包…")
+        if magic != b"PK" or _zip_ok(dest):
+            prog("download", 100, "本机已有下载好的安装包，直接用")
+            return
+        log.warning("本机缓存的安装包是坏的，删掉重新下：%s", dest)
+        os.remove(dest)
     part = dest + ".part"
     last = None
     done = False
@@ -172,14 +186,9 @@ def _download(urls, dest, prog, magic=b"\x1f\x8b", keep="vscode-server-*-linux-*
         os.remove(part)
         raise RuntimeError("下载到的不是有效的安装包（可能被网络拦截了）。")
     if magic == b"PK":                                           # zip：打开读一遍目录，坏包（被截断、混进别的内容）当场发现，不要传到主机上才失败
-        import zipfile
-        try:
-            with zipfile.ZipFile(part) as z:
-                if not z.namelist():
-                    raise zipfile.BadZipFile("空包")
-        except Exception as e:                                   # noqa: BLE001
+        if not _zip_ok(part):
             os.remove(part)
-            raise RuntimeError("下载到的安装包是坏的（%s），已删除，请重试。" % e)
+            raise RuntimeError("下载到的安装包是坏的（校验没通过），已删除，请重试。")
     for k in range(8):                                           # 杀毒软件刚好在扫描新下载的文件时会短暂占用（WinError 32），隔一会儿重试
         try:
             os.replace(part, dest)
@@ -247,6 +256,8 @@ def _install_windows(alias, cli, sftp, loc, prog):
             sftp.remove(remote)
         except OSError:
             pass
+        if sftp.stat(remote + ".part").st_size != size:
+            raise RuntimeError("上传到主机的文件大小对不上（可能网络中断），请重试。")
         sftp.rename(remote + ".part", remote)
         prog("extract", 0, "正在主机上解压…")
         script = r"""

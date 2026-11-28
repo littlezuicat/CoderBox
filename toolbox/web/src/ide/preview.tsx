@@ -36,7 +36,7 @@ const toBytes = (b64: string) => {
   return u
 }
 
-export type Loaded = { url?: string; wb?: any; X?: any; sheets?: string[]; size: number; w?: number; h?: number }
+export type Loaded = { url?: string; bytes?: Uint8Array; doc?: any; wb?: any; X?: any; sheets?: string[]; size: number; w?: number; h?: number }
 
 // 从服务器读回文件并做好渲染要用的东西（对象地址 / 解析好的工作簿）。表格库只在真打开表格时才加载。
 export async function loadPreview(alias: string, path: string, kind: PKind): Promise<{ ok: true; pv: Loaded } | { ok: false; error: string }> {
@@ -51,10 +51,11 @@ export async function loadPreview(alias: string, path: string, kind: PKind): Pro
       return { ok: true, pv: { wb, X: XLSX, sheets: wb.SheetNames, size: bytes.length } }
     } catch (e) { return { ok: false, error: '表格解析失败：' + String(e) } }
   }
-  const mime = kind === 'pdf' ? 'application/pdf' : IMG_MIME[extOf(path)] || 'application/octet-stream'
+  if (kind === 'pdf') return { ok: true, pv: { bytes, size: bytes.length } }          // PDF 交给 pdf.js 自己画（不用 WebView2 自带查看器，它的工具栏/侧栏嵌在界面里不好看）
+  const mime = IMG_MIME[extOf(path)] || 'application/octet-stream'
   return { ok: true, pv: { url: URL.createObjectURL(new Blob([bytes], { type: mime })), size: bytes.length } }
 }
-export const freePreview = (pv?: Loaded) => { if (pv?.url) URL.revokeObjectURL(pv.url) }
+export const freePreview = (pv?: Loaded) => { if (pv?.url) URL.revokeObjectURL(pv.url); try { pv?.doc?.destroy() } catch { /* 已经销毁 */ } }
 
 const sizeText = (n: number) => (n >= MB ? (n / MB).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB')
 
@@ -89,10 +90,95 @@ function ImageView({ pv, dark, onMeta }: { pv: Loaded; dark: boolean; onMeta: (s
   )
 }
 
-// ---------------- PDF：交给 WebView2 自带的 PDF 查看器 ----------------
-function PdfView({ pv, onMeta }: { pv: Loaded; onMeta: (s: string) => void }) {
-  useEffect(() => { onMeta(sizeText(pv.size)) }, [])
-  return <iframe src={pv.url} title="pdf" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#fff' }} />
+// ---------------- PDF：pdf.js 把每一页画成画布，连续滚动，不带任何工具栏 ----------------
+let pdfjsP: Promise<any> | null = null
+const pdfjs = () => (pdfjsP ??= (async () => {
+  const lib = await import('pdfjs-dist')
+  const W = (await import('pdfjs-dist/build/pdf.worker.min.mjs?worker')).default      // 用 ?worker 让 vite 打成 .js（本地小服务器对 .mjs 的类型不一定对）
+  lib.GlobalWorkerOptions.workerPort = new W()
+  return lib
+})())
+
+function PdfPage({ doc, n, width, ratio, root }: { doc: any; n: number; width: number; ratio: number; root: React.RefObject<HTMLDivElement | null> }) {
+  const holder = useRef<HTMLDivElement>(null)
+  const [on, setOn] = useState(false)
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    const el = holder.current!
+    const io = new IntersectionObserver(([e]) => setOn(e.isIntersecting), { root: root.current, rootMargin: '1200px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!on) { const c = holder.current?.querySelector('canvas'); if (c) { c.width = 0; c.height = 0 } return }    // 滚远了就释放画布，几百页的 PDF 不会吃光内存
+    let task: any, dead = false
+    ;(async () => {
+      const page = await doc.getPage(n)
+      if (dead) return
+      const v1 = page.getViewport({ scale: 1 })
+      const dpr = window.devicePixelRatio || 1
+      const vp = page.getViewport({ scale: (width / v1.width) * dpr })
+      setH(width * (v1.height / v1.width))
+      let c = holder.current!.querySelector('canvas') as HTMLCanvasElement
+      if (!c) { c = document.createElement('canvas'); holder.current!.appendChild(c) }
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height)
+      c.style.cssText = `width:${width}px;height:${width * (v1.height / v1.width)}px;display:block`
+      task = page.render({ canvas: c, viewport: vp })
+      try { await task.promise } catch { /* 被取消（缩放/滚走） */ }
+    })()
+    return () => { dead = true; try { task?.cancel() } catch { /* 无事 */ } }
+  }, [on, width, doc])
+  return <div ref={holder} data-page={n} style={{ width, height: h || width * ratio, background: '#fff', margin: '0 auto 12px', filter: 'drop-shadow(0 1px 4px rgba(0,0,0,.28))' }} />
+}
+
+function PdfView({ pv, dark, onMeta }: { pv: Loaded; dark: boolean; onMeta: (s: string) => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [doc, setDoc] = useState<any>(pv.doc || null)
+  const [err, setErr] = useState('')
+  const [zoom, setZoom] = useState(1)
+  const [cw, setCw] = useState(0)
+  const [ratio, setRatio] = useState(1.414)
+  useEffect(() => {
+    const el = box.current!
+    const ro = new ResizeObserver(() => setCw(el.clientWidth))
+    ro.observe(el); setCw(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    if (pv.doc) return
+    let dead = false
+    ;(async () => {
+      try {
+        const lib = await pdfjs()
+        const d = await lib.getDocument({ data: pv.bytes!.slice(), cMapUrl: import.meta.env.BASE_URL + 'pdfjs/cmaps/', cMapPacked: true, useWasm: false }).promise
+        if (dead) { d.destroy(); return }
+        pv.doc = d; setDoc(d)
+      } catch (e) { if (!dead) setErr('PDF 打不开：' + String((e as any)?.message || e)) }
+    })()
+    return () => { dead = true }
+  }, [])
+  useEffect(() => {
+    if (!doc) return
+    onMeta(`${doc.numPages} 页 · ${sizeText(pv.size)}`)
+    doc.getPage(1).then((p: any) => { const v = p.getViewport({ scale: 1 }); setRatio(v.height / v.width) })
+  }, [doc])
+  const width = Math.max(120, Math.round(Math.min(cw - 32, 1200) * zoom))
+  const zoomBy = (k: number) => setZoom((v) => Math.min(4, Math.max(0.3, v * k)))
+  return (
+    <Box sx={{ position: 'absolute', inset: 0 }}>
+      <Box ref={box} onWheel={(e) => { if (e.ctrlKey) { e.preventDefault?.(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1) } }}
+        sx={{ position: 'absolute', inset: 0, overflow: 'auto', py: 2, bgcolor: dark ? '#1e1f29' : '#e4e4e8' }}>
+        {err && <Typography sx={{ p: 3, color: 'error.main', fontSize: 14 }}>{err}</Typography>}
+        {!doc && !err && <Typography sx={{ p: 3, color: 'text.disabled', fontSize: 14 }}>正在加载…</Typography>}
+        {doc && cw > 0 && Array.from({ length: doc.numPages }, (_, i) => <PdfPage key={i} doc={doc} n={i + 1} width={width} ratio={ratio} root={box} />)}
+      </Box>
+      <Box sx={{ position: 'absolute', right: 18, bottom: 12, display: 'flex', alignItems: 'center', gap: 0.2, px: 0.6, borderRadius: 2, bgcolor: 'background.paper', border: 1, borderColor: 'divider', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.25))' }}>
+        <IconButton size="small" onClick={() => zoomBy(1 / 1.2)}><ZoomOutRounded fontSize="small" /></IconButton>
+        <Typography onClick={() => setZoom(1)} title="点一下恢复适应宽度" sx={{ fontSize: 12, width: 44, textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>{Math.round(zoom * 100)}%</Typography>
+        <IconButton size="small" onClick={() => zoomBy(1.2)}><ZoomInRounded fontSize="small" /></IconButton>
+      </Box>
+    </Box>
+  )
 }
 
 // ---------------- Excel：每个工作表一个标签，只渲染前面一部分行列，免得卡住 ----------------
@@ -169,7 +255,7 @@ function SheetView({ pv, onMeta }: { pv: Loaded; onMeta: (s: string) => void }) 
 
 export function PreviewView({ kind, pv, dark, onMeta }: { kind: PKind; pv: Loaded; dark: boolean; onMeta: (s: string) => void }) {
   if (kind === 'image') return <ImageView pv={pv} dark={dark} onMeta={onMeta} />
-  if (kind === 'pdf') return <PdfView pv={pv} onMeta={onMeta} />
+  if (kind === 'pdf') return <PdfView pv={pv} dark={dark} onMeta={onMeta} />
   return <SheetView pv={pv} onMeta={onMeta} />
 }
 

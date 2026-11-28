@@ -97,21 +97,23 @@ export default function App() {
     if (!ready) return
     const el = document.getElementById('splash'); if (!el) return
     document.documentElement.dataset.theme = mode
-    // 计时从窗口可见（动画开始放）算起；窗口还藏着就等它显示
-    let t1: any, t2: any
-    const run = () => {
-      const w = window as any
-      if (appMode === 'app' && w.__splashT0 === undefined) {            // 动画还没开始放（窗口还没显示出来）：等后端调 __splashGo；等太久（>6s）就自己开始，免得卡住
-        if (performance.now() > 6000) w.__splashGo?.()
-        t1 = setTimeout(run, 50); return
-      }
+    // 预加载：动画一直停在起始帧，等界面这一轮渲染提交并画出来、主线程空闲了才开始放（index.html 里 __splashGo），计时从那一刻算起
+    let t1: any, t2: any, r1 = 0, r2 = 0, idle: any
+    const w = window as any
+    const show = appMode === 'app' && !new URLSearchParams(location.search).get('nosplash')
+    const finish = () => {
       const t0 = w.__splashT0 ?? performance.now()
-      const wait = appMode === 'app' && !new URLSearchParams(location.search).get('nosplash') ? Math.max(0, 1100 - (performance.now() - t0)) : 0
+      const wait = show ? Math.max(0, 1100 - (performance.now() - t0)) : 0
       t1 = setTimeout(() => el.classList.add('leaving'), wait)
       t2 = setTimeout(() => el.remove(), wait + 340)
     }
-    run()
-    return () => { clearTimeout(t1); clearTimeout(t2) }
+    if (show && w.__splashT0 === undefined) {
+      const go = () => { w.__splashGo?.(); finish() }
+      r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(() => {
+        if ('requestIdleCallback' in window) idle = (window as any).requestIdleCallback(go, { timeout: 400 }); else t1 = setTimeout(go, 60)
+      }) })
+    } else finish()
+    return () => { clearTimeout(t1); clearTimeout(t2); cancelAnimationFrame(r1); cancelAnimationFrame(r2); if (idle) (window as any).cancelIdleCallback?.(idle) }
   }, [ready, appMode, mode])
   useEffect(() => { if (ready && appMode === 'app') api.set_titlebar(mode) }, [mode, ready, appMode])
   // 弹窗（MUI 遮罩）打开时，顶栏里原生的那一块也要压暗：监听遮罩出现/消失，告诉后端。（菜单的遮罩是透明的，不算）

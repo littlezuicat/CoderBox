@@ -51,10 +51,11 @@
       </svg>
     </div>
     <script>
-      // 窗口显示出来（页面可见）才开始放动画、才开始计时；窗口藏着时页面是“隐藏”状态
+      // 预加载：JS 包解析 + 界面首次渲染很占主线程，和动画同时进行会卡（logo 飞入那一段尤其明显）。
+      // 所以动画先停在起始帧（和开屏同底色的空白），等界面渲染完、主线程空下来，由 App.tsx 调 __splashGo 再从头放。
       window.__splashGo = function () { var s = document.getElementById('splash'); if (s && !s.classList.contains('go')) { s.classList.add('go'); window.__splashT0 = performance.now() } }
-      // 页面一加载好动画就从头开始放（窗口在这之前就已经显示出来了，是一块和开屏同底色的空窗口）
-      window.__splashGo()
+      // 兜底：界面 5 秒还没就绪（脚本出错之类）就自己放，免得一直空白
+      setTimeout(window.__splashGo, 5000)
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

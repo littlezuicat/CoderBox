@@ -410,7 +410,7 @@ export default function Explorer({ alias, active, cloudPath, onOpen, onTerm, onR
       </Box>}
       {prog ? <LinearProgress variant={prog.total ? 'determinate' : 'indeterminate'} value={pct} sx={{ height: 2, flexShrink: 0 }} />
         : (busy.size > 0 || work) && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
+      <Box onClick={(e) => { if (e.target === e.currentTarget) { setSel(new Set()); anchor.current = ''; box.current?.focus() } }} sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>   {/* 点空白处 = 取消选中，新建/粘贴就落在最外层 */}
         {err && <Typography sx={{ m: 1, fontSize: 12.5, color: 'text.secondary' }}>{err}</Typography>}
         {view.map((v, vi) => 'edit' in v ? editRow(v.depth, edit?.kind === 'dir', 'edit' + vi) : (edit?.kind === 'rename' && edit.dir === parentOf(v.path) && edit.old === v.ent.name) ? editRow(v.depth, v.ent.dir, v.path) : (({ path, ent, depth }) => (
           <Box key={path} data-exrow={path} data-dir={ent.dir ? '1' : '0'} onClick={(e) => clickRow(e, path, ent)} onMouseDown={(e) => startDrag(e, path, ent)}

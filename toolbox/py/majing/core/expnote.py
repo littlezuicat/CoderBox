@@ -16,8 +16,8 @@ import tempfile
 
 log = logging.getLogger("majing.exp")
 
-SYSTEM = "用一句中文（20到30个字，不换行）概括这个深度学习实验在做什么：任务、数据集、方法要点，例如“在RESIDE数据集上训练基于Transformer的单图像去雾网络”。不写路径和参数，不加引号，不要用“这是”开头，直接说做什么，只输出这一句。"
-MAX_LEN = 34
+SYSTEM = "用一句中文（不超过50个字，一般30字左右，不换行）概括这个深度学习实验在做什么：任务、数据集、方法要点，例如“在RESIDE数据集上训练基于Transformer的单图像去雾网络”。不写路径和参数，不加引号，不要用“这是”开头，直接说做什么，只输出这一句。"
+MAX_LEN = 50
 GPT_MODEL = "gpt-6-luna"
 PROVIDERS = {"haiku": "claude", "gpt": "codex"}
 
@@ -97,7 +97,7 @@ def build_prompt(ctx):
     if ctx.get("head"):
         parts.append("日志：\n" + _head(mask(ctx["head"]), 700))
     if ctx.get("shorten"):
-        parts.append("你上次写的“%s”太长。压缩成不超过28个字的完整一句话，仍然只输出这一句。" % ctx["shorten"])
+        parts.append("你上次写的“%s”太长。压缩成不超过45个字的完整一句话，仍然只输出这一句。" % ctx["shorten"])
     return "\n".join(parts)
 
 
@@ -173,7 +173,7 @@ def clean(text):
     t = re.sub(r"^(?:这是|该实验是|本实验是)(?:一个|一项|一次)?", "", t).strip(" ，,：:")
     if "（" in t and "）" not in t:
         t = t.split("（")[0].strip() or t
-    return t[:60]                        # 只防模型发疯；太长让它自己压缩（见 ask），界面一行放不下会自动省略
+    return t[:70]                        # 只防模型发疯；太长让它自己压缩（见 ask），界面一行放不下会自动省略
 
 
 def _tmp():

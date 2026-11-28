@@ -41,6 +41,11 @@ export function buildTheme(mode: 'light' | 'dark') {
     /* 右键菜单、下拉菜单这类弹出层：和底下的面板拉开——更亮的底色 + 细边 + 阴影（上面全局关了 box-shadow，所以用 filter 画阴影） */
     .MuiPopover-paper { background-color: ${mode === 'light' ? '#ffffff' : '#373a50'} !important; border: 1px solid ${mode === 'light' ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)'} !important; filter: drop-shadow(0 6px 16px rgba(0,0,0,${mode === 'light' ? '0.2' : '0.5'})); }
     .MuiDialog-paper { background-color: ${mode === 'light' ? '#ffffff' : '#2E303D'} !important; }
+    ${mode === 'dark' ? `/* 暗色下 MUI 的提示条底色是把主色压到近黑，很脏：改成半透明主色 + 提亮的文字 */
+    .MuiAlert-standardWarning { background-color: ${alpha(dt.warning_color, 0.18)} !important; color: #FFD59A !important; }
+    .MuiAlert-standardError { background-color: ${alpha(dt.error_color, 0.18)} !important; color: #FFB4AE !important; }
+    .MuiAlert-standardSuccess { background-color: ${alpha(dt.success_color, 0.18)} !important; color: #9DE8B4 !important; }
+    .MuiAlert-standardInfo { background-color: ${alpha(dt.info_color, 0.18)} !important; color: #A9D2FF !important; }` : ''}
     * { outline: none !important; box-shadow: none !important; }`
   return muiTheme
 }

@@ -26,7 +26,7 @@ log = logging.getLogger("majing.exp")
 
 INTERVAL = 60                 # 后台轮询间隔（秒）
 MIN_SECS = 120                # 跑满这么久才算“实验”（避开几十秒的测试/推理脚本）；或者连续两次采样都在
-NOTE_V = 2                  # 一句话说明的版本：提示词改了就加一，旧说明会重新生成一次
+NOTE_V = 3                  # 一句话说明的版本：提示词改了就加一，旧说明会重新生成一次
 ABSENT_N = 2                  # 连续几次没看到进程才算结束
 MAX_ITEMS = 600
 TAIL_BYTES = 200000

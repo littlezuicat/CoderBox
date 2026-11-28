@@ -2,8 +2,13 @@
 """把一组整页图片打包成 PPTX：每页一张铺满的图片 + 演讲者备注。
 结构沿用 res/base.pptx（python-pptx 生成，PowerPoint/LibreOffice 验证过），只在标记处填入页面、尺寸和标题。
 图片原样存入，不重新压缩。"""
+import errno
 import os
+import re
 import struct
+import sys
+import tempfile
+import time
 import zipfile
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape
@@ -83,6 +88,19 @@ def write_pptx(out_path, cx, cy, slides, title=""):
     if not slides:
         raise ValueError("没有页面")
     tmp = out_path + ".part"
+    try:
+        _write_pptx(tmp, cx, cy, slides, title)
+        _check_pptx(tmp, len(slides))
+        _replace(tmp, out_path)
+    except BaseException:
+        try:                                             # 写到一半失败：别留下半截 .part 文件
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _write_pptx(tmp, cx, cy, slides, title):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     ids = "".join('<p:sldId id="%d" r:id="rIdS%d"/>' % (255 + i, i) for i in range(1, len(slides) + 1))
     rels = "".join('<Relationship Id="rIdS%d" Type="%s/slide" Target="slides/slide%d.xml"/>' % (i, NS_REL, i) for i in range(1, len(slides) + 1))
@@ -118,9 +136,30 @@ def write_pptx(out_path, cx, cy, slides, title=""):
             z.writestr("ppt/notesSlides/_rels/notesSlide%d.xml.rels" % i, HEAD + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
                        '<Relationship Id="rId1" Type="%s/notesMaster" Target="../notesMasters/notesMaster1.xml"/>'
                        '<Relationship Id="rId2" Type="%s/slide" Target="../slides/slide%d.xml"/></Relationships>' % (NS_REL, NS_REL, i))
-    if os.path.exists(out_path):
-        os.remove(out_path)
-    os.replace(tmp, out_path)
+
+
+def _replace(tmp, out_path):
+    """把 .part 改成正式文件名。杀毒软件/网盘同步刚好在扫描新文件时会短暂占用（WinError 32 / 5），隔一会儿重试几次；os.replace 本身就会覆盖旧文件，不先删。"""
+    last = None
+    for k in range(8):
+        try:
+            os.replace(tmp, out_path)
+            return
+        except PermissionError as e:
+            last = e
+            time.sleep(0.25 * (k + 1))
+    raise last
+
+
+def _check_pptx(path, n):
+    """写完马上打开检查一遍：是合法的 zip、页数对、不是空文件。有问题就当场报错，别把坏文件交给用户。"""
+    if os.path.getsize(path) < 1024:
+        raise OSError("生成的文件是空的")
+    with zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+        for i in (1, n):
+            if "ppt/slides/slide%d.xml" % i not in names or not any(x.startswith("ppt/media/image%d." % i) for x in names):
+                raise OSError("生成的文件缺第 %d 页" % i)
 
 
 def unique_path(folder, name, ext):
@@ -130,3 +169,73 @@ def unique_path(folder, name, ext):
         p = os.path.join(folder, "%s (%d)%s" % (name, k, ext))
         k += 1
     return p
+
+
+# ---------------------------------------------------------------------------- 保存的容错
+MAX_PATH_SAFE = 240            # Windows 老式路径上限 260，留一点余量；超过的话标题会被截短
+
+
+def friendly_error(e):
+    """把保存失败的原因说成人话。"""
+    n = getattr(e, "errno", None)
+    w = getattr(e, "winerror", None)
+    if n == errno.ENOSPC or w == 112:
+        return "磁盘空间不够"
+    if w in (32, 33):
+        return "文件正被别的程序占用（杀毒软件或网盘同步？）"
+    if isinstance(e, PermissionError) or n == errno.EACCES or w == 5:
+        return "没有写入权限（只读文件夹或被安全软件拦截）"
+    if isinstance(e, FileNotFoundError) or w in (3, 206):
+        return "文件夹不存在或路径太长"
+    if n == errno.EROFS:
+        return "只读位置"
+    return str(e) or e.__class__.__name__
+
+
+def _fit_name(folder, name, ext):
+    """文件名太长会让整条路径超过上限，写入就失败：必要时把名字截短（保留结尾的后缀部分）。"""
+    bad = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+    name = bad.sub("_", name).strip()
+    room = MAX_PATH_SAFE - len(os.path.join(os.path.abspath(folder), "")) - len(ext) - 6          # 6 = “ (99)”预留
+    if room < 12:
+        raise OSError("路径太深")
+    if len(name) > room:
+        keep_tail = "_图片版"
+        head = name[:-len(keep_tail)] if name.endswith(keep_tail) else name
+        tail = keep_tail if name.endswith(keep_tail) else ""
+        head = head[:max(4, room - len(tail))].rstrip(" .")
+        name = head + tail
+    return name or "output"
+
+
+def fallback_dirs(*first):
+    """保存目录的候选：传进来的优先，然后依次是 桌面、文档、系统临时目录。去重、跳过空的。"""
+    out = [d for d in first if d]
+    home = os.path.expanduser("~")
+    for sub in ("Desktop", "Documents"):
+        out.append(os.path.join(home, sub))
+    out.append(tempfile.gettempdir())
+    seen, res = set(), []
+    for d in out:
+        k = os.path.normcase(os.path.abspath(d))
+        if k not in seen:
+            seen.add(k)
+            res.append(d)
+    return res
+
+
+def save_robust(dirs, title, suffix, cx, cy, slides):
+    """依次试各个目录，写得进去就用。返回 (输出文件, 说明)；说明非空表示没存到首选位置（原因和实际位置）。全失败才抛错，错误里列出每个位置的原因。"""
+    fails = []
+    for k, d in enumerate(dirs):
+        try:
+            os.makedirs(d, exist_ok=True)
+            out = unique_path(d, _fit_name(d, title + suffix, ".pptx"), ".pptx")
+            write_pptx(out, cx, cy, slides, title)
+            note = ""
+            if k > 0:
+                note = "没能存到 %s（%s），已存到 %s" % (dirs[0], fails[0][1] if fails else "原因未知", os.path.dirname(out))
+            return out, note
+        except Exception as e:                                   # noqa: BLE001
+            fails.append((d, friendly_error(e)))
+    raise OSError("保存失败。" + "；".join("%s：%s" % f for f in fails[:3]))

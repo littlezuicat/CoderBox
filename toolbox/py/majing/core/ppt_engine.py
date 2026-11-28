@@ -224,12 +224,10 @@ class PptEngine:
                 raise RuntimeError("没有可转换的页面（全是隐藏页？）")
             title = os.path.splitext(os.path.basename(full))[0]
             emu = (int(round(sw * 12700)), int(round(sh * 12700)))
-            out = pptx_writer.unique_path(opt.out_dir or os.path.dirname(full), title + "_图片版", ".pptx")
-            try:
-                pptx_writer.write_pptx(out, emu[0], emu[1], slides, title)
-            except PermissionError:                              # 原文件夹写不进去（比如只读的 U 盘）：放到桌面
-                out = pptx_writer.unique_path(os.path.join(os.path.expanduser("~"), "Desktop"), title + "_图片版", ".pptx")
-                pptx_writer.write_pptx(out, emu[0], emu[1], slides, title)
+            # 保存：首选输出目录，写不进去（不存在/只读/路径太长/被占用/磁盘满…）就依次换：原文件旁边、桌面、文档、临时目录，并在结果里说明
+            out, note = pptx_writer.save_robust(pptx_writer.fallback_dirs(opt.out_dir, os.path.dirname(full)), title, "_图片版", emu[0], emu[1], slides)
+            if note:
+                res.warning = (res.warning + "；" if res.warning else "") + note
             res.output, res.pages = out, len(slides)
             return res
         finally:
@@ -313,8 +311,8 @@ class FakeEngine:
                 progress(i, total)
             res = PptResult()
             title = os.path.splitext(os.path.basename(full))[0]
-            res.output = pptx_writer.unique_path(opt.out_dir or os.path.dirname(full), title + "_图片版", ".pptx")
-            pptx_writer.write_pptx(res.output, 12192000, 6858000, slides, title)
+            res.output, note = pptx_writer.save_robust(pptx_writer.fallback_dirs(opt.out_dir, os.path.dirname(full)), title, "_图片版", 12192000, 6858000, slides)
+            res.warning = note or None
             res.pages, res.img_w, res.img_h = total, w // 8, h // 8
             return res
         finally:

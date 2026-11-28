@@ -85,18 +85,16 @@ function Bar({ frac, color, running, dark }: { frac: number | null; color: strin
 type RowProps = { e: Exp; host?: { gpus: HostGpu[] }; showHost: boolean; zebra: boolean; now: number; dark: boolean; color: string; ended: boolean; onLog: () => void; onRemove: () => void; onSub: () => void }
 function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemove, onSub }: RowProps) {
   const theme = useTheme()
-  const [open, setOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const running = e.status === 'running'
   const stale = running && now - e.updated > 240
   const pct = e.frac === null ? null : Math.min(100, Math.floor(e.frac * 1000) / 10)
   const sc = e.status === 'done' ? theme.palette.success.main : e.status === 'failed' ? theme.palette.error.main : e.status === 'stopped' ? theme.palette.warning.main : color
   const stageText = running ? e.stage.replace(/（.*）/, '') : e.status === 'done' ? '已完成' : e.status === 'failed' ? '出错退出' : '中途退出'
-  const m = e.metrics || {}
-  const mets = [['PSNR', m.psnr], ['SSIM', m.ssim], ['loss', m.loss]].filter((x) => x[1])
   const endText = running ? (e.eta_ts ? `${clock(e.eta_ts)}${e.eta_src === 'elapsed' ? ' ≈' : ''}` : stale ? `停在 ${fmtDur(now - e.updated)} 前` : '—') : clock(e.end || e.updated)
   return (
     <Box sx={{ bgcolor: zebra ? (dark ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.028)') : 'transparent', '&:hover': { bgcolor: dark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.055)' } }}>
-      <Box onClick={() => setOpen((v) => !v)} sx={{ display: 'grid', gridTemplateColumns: COLS, alignItems: 'center', columnGap: 1.5, px: 1.5, minHeight: 46, py: 0.6, cursor: 'pointer', opacity: stale ? 0.55 : 1 }}>
+      <Box onContextMenu={(ev) => { ev.preventDefault(); setMenu({ x: ev.clientX, y: ev.clientY }) }} title={e.status === 'failed' && e.error ? e.error : undefined} sx={{ display: 'grid', gridTemplateColumns: COLS, alignItems: 'center', columnGap: 1.5, px: 1.5, minHeight: 46, py: 0.6, opacity: stale ? 0.55 : 1 }}>
         <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 600 }}>{showHost ? e.alias : ''}</Typography>
         <GpuCol e={e} host={host} color={color} />
         <GpuUse e={e} host={host} />
@@ -125,23 +123,10 @@ function Row({ e, host, showHost, zebra, now, dark, color, ended, onLog, onRemov
           </Tooltip>
         ) : <span />}
       </Box>
-      {open && (
-        <Box sx={{ px: 1.5, pb: 1.3, pt: 0.2, display: 'flex', flexDirection: 'column', gap: 0.6, fontSize: 12, color: 'text.secondary' }}>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <span>{e.alias} · {e.user}</span>{mets.map(([k, v]) => <span key={k}>{k} {v}</span>)}
-          </Box>
-          {e.status === 'failed' && e.error && <Box sx={{ px: 1, py: 0.6, borderRadius: 1, bgcolor: alpha(theme.palette.error.main, dark ? 0.16 : 0.08), color: 'error.main', fontFamily: 'Consolas, monospace', wordBreak: 'break-all' }}>{e.error}</Box>}
-          <Box sx={{ fontFamily: 'Consolas, monospace', wordBreak: 'break-all', userSelect: 'text', bgcolor: dark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.04)', borderRadius: 1, p: 1 }}>
-            <div>{e.launcher || e.cmd}</div>
-            <div>{e.cwd}</div>
-            {e.log && <div>{e.log}</div>}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {e.log && <Button size="small" onClick={(ev) => { ev.stopPropagation(); onLog() }} sx={{ minWidth: 0, fontSize: 12 }}>看日志</Button>}
-            {ended && <Button size="small" color="inherit" onClick={(ev) => { ev.stopPropagation(); onRemove() }} sx={{ minWidth: 0, fontSize: 12, color: 'text.secondary' }}>删除记录</Button>}
-          </Box>
-        </Box>
-      )}
+      <Menu open={!!menu} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
+        <MenuItem disabled={!e.log} onClick={() => { setMenu(null); onLog() }}>看日志</MenuItem>
+        {ended && <MenuItem onClick={() => { setMenu(null); onRemove() }}>删除记录</MenuItem>}
+      </Menu>
     </Box>
   )
 }

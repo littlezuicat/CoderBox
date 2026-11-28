@@ -512,6 +512,10 @@ class Monitor:
             if g.get("launcher"):
                 rec["launcher"] = g["launcher"]
         rec["seen"] = rec["updated"] = int(now)
+        with self._lock:
+            hg = (self.hosts.get(rec["alias"]) or {}).get("gpus") or []
+        if hg:
+            rec["gpu_model"] = hg[0]["name"]
         if best:
             _, f, a = best
             rec["log"] = f["path"]

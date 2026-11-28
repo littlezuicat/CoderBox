@@ -10,15 +10,21 @@ const mockExpItems = () => {
     mk({ id: 'e3', alias: 'msh3', user: 'wang', name: 'ConvIR_ots', gpus: [2], start: n - 600, frac: 0.0123, label: 'iter 1,230 / 100,000', eta_ts: n + 3600 * 9, eta_src: 'elapsed', stage: '验证 / 测试中' }),
     mk({ id: 'e2', alias: 'msh4', user: 'li', name: 'dehazeformer-b · train', gpus: [0], start: n - 3600 * 5, frac: 0.2335, label: 'epoch 47 / 200（本轮 68%）', eta_ts: n + 3600 * 15 + 1200, eta_src: 'rate' }),
     mk({ id: 'e4', alias: 'shang', user: 'chen', name: 'my_new_net', gpus: [], start: n - 7200, frac: null, label: 'epoch 3 · iter 2,000（总数没识别到）', last_line: '<epoch:  3, iter:   2,000, lr:2.000e-04> G_loss: 1.234e-02' }),
-    mk({ id: 'e5', alias: 'msh2', name: 'FFA-Net_its', gpus: [1], start: n - 86400 * 2, end: n - 3600 * 6, status: 'done', frac: 1, label: 'iter 500,000 / 500,000', stage: '已完成', metrics: { psnr: '36.39', ssim: '0.9886' } }),
-    mk({ id: 'e6', alias: '622', name: 'restormer_haze', gpus: [0], start: n - 86400, end: n - 3600 * 14, status: 'failed', frac: 0.31, label: 'iter 93,000 / 300,000', stage: '出错退出', error: 'RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB' }),
-    mk({ id: 'e7', alias: 'worker', name: 'AECR-Net · test', gpus: [0], start: n - 86400 * 3, end: n - 86400 * 3 + 5400, status: 'stopped', frac: 0.07, label: 'epoch 14 / 200', stage: '已结束（中途退出）' }),
+    mk({ id: 'e5', alias: 'msh2', name: 'FFA-Net_its', gpu_model: 'NVIDIA GeForce RTX 4090', gpus: [1], start: n - 86400 * 2, end: n - 3600 * 6, status: 'done', frac: 1, label: 'iter 500,000 / 500,000', stage: '已完成', metrics: { psnr: '36.39', ssim: '0.9886' } }),
+    mk({ id: 'e6', alias: '622', name: 'restormer_haze', gpu_model: 'NVIDIA GeForce RTX 2080 Ti', gpus: [0], start: n - 86400, end: n - 3600 * 14, status: 'failed', frac: 0.31, label: 'iter 93,000 / 300,000', stage: '出错退出', error: 'RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB' }),
+    mk({ id: 'e7', alias: 'worker', name: 'AECR-Net · test', gpu_model: 'NVIDIA GeForce RTX 2060', gpus: [0], start: n - 86400 * 3, end: n - 86400 * 3 + 5400, status: 'stopped', frac: 0.07, label: 'epoch 14 / 200', stage: '已结束（中途退出）' }),
   ]
 }
 const mockExpHosts = () => {
   const t = Math.floor(Date.now() / 1000)
-  const g = (n: number, name: string) => Array.from({ length: n }, (_, i) => ({ index: i, name, mem_used: 0, mem_total: 24564, util: 0 }))
-  return { msh3: { t, gpus: g(4, 'NVIDIA GeForce RTX 4090') }, msh4: { t, gpus: g(2, 'NVIDIA GeForce RTX 4090') }, shang: { t, gpus: g(1, 'NVIDIA RTX A5000') }, jiajun: { t, gpus: g(1, 'NVIDIA GeForce RTX 5090') }, msh2: { t, gpus: g(2, 'NVIDIA GeForce RTX 4090') } }
+  const g = (name: string, vals: number[][]) => vals.map((v, i) => ({ index: i, name, util: v[0], mem_used: v[1], mem_total: 24564 }))
+  return {
+    msh3: { t, gpus: g('NVIDIA GeForce RTX 4090', [[98, 21200], [97, 21100], [91, 18400], [0, 12]]) },
+    msh4: { t, gpus: g('NVIDIA GeForce RTX 4090', [[55, 16000], [0, 10]]) },
+    shang: { t, gpus: g('NVIDIA RTX A5000', [[63, 9800]]) },
+    jiajun: { t, gpus: g('NVIDIA GeForce RTX 5090', [[0, 8]]) },
+    msh2: { t, gpus: g('NVIDIA GeForce RTX 4090', [[0, 8], [0, 8]]) },
+  }
 }
 const mockExp = () => ({ items: S.exp || (S.exp = mockExpItems()), hosts: mockExpHosts(), last_poll: Math.floor(Date.now() / 1000) - 12, busy: false, enabled: true })
 

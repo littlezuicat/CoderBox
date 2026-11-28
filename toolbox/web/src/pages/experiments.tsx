@@ -8,19 +8,19 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from '../bridge'
 import { BasePage } from '../components/base-page'
-import { fmtDur } from '../components/gpu-board'
+import { fmtDur, gb } from '../components/gpu-board'
 import { useEvent } from '../hooks'
 
 type Exp = {
   id: string; alias: string; user: string; cwd: string; cmd: string; launcher?: string; name: string; gpus: number[]; mem: number; pid: number
   start: number; end: number | null; status: 'running' | 'done' | 'failed' | 'stopped'; frac: number | null; label: string; stage: string
-  eta_ts: number | null; eta_src: 'log' | 'rate' | 'elapsed' | 'epoch-eta' | null; last_line: string; metrics: Record<string, string>; log: string; error: string; updated: number
+  gpu_model?: string; eta_ts: number | null; eta_src: 'log' | 'rate' | 'elapsed' | 'epoch-eta' | null; last_line: string; metrics: Record<string, string>; log: string; error: string; updated: number
 }
 type HostGpu = { index: number; name: string; mem_used: number; mem_total: number; util: number }
 type Hosts = Record<string, { t: number; gpus: HostGpu[] }>
 type HFilter = 'all' | 'done' | 'bad'
 
-const COLS = '112px minmax(150px,1.1fr) minmax(200px,1.7fr) 54px minmax(160px,1.1fr)'      // 显卡 | 实验 | 进度 | % | 时间
+const COLS = '248px minmax(140px,1fr) minmax(170px,1.5fr) 54px 164px'      // 显卡 | 实验 | 进度 | % | 时间
 const TASK_COLORS = ['#378ADD', '#1D9E75', '#BA7517', '#7F77DD', '#D4537E', '#639922']
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = (t: number) => {
@@ -36,12 +36,23 @@ const span = (a: number, b: number) => {                       // 同一天只�
 }
 const shortName = (n: string) => n.replace(/^NVIDIA\s+(GeForce\s+)?/i, '')
 
-// 显卡胶囊：GPU0 GPU1，颜色跟任务走；看不出在哪张卡（容器里 nvidia-smi 看不到进程）就写 GPU ?
-function GpuTags({ gpus, color }: { gpus: number[]; color: string }) {
-  if (!gpus.length) return <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>GPU ?</Typography>
+// 显卡列：每张卡一行 = GPU0 胶囊 + 型号 + 利用率 + 显存（实时数据来自最近一次扫描；历史记录只有编号和型号）
+function GpuCol({ e, host, color }: { e: Exp; host?: { gpus: HostGpu[] }; color: string }) {
+  const running = e.status === 'running'
+  const model = shortName(e.gpu_model || host?.gpus?.[0]?.name || '')
+  if (!e.gpus.length) return <Typography sx={{ fontSize: 12, color: 'text.disabled' }}>GPU ?{model ? ` · ${model}` : ''}</Typography>
   return (
-    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-      {gpus.map((g) => <Box key={g} component="span" sx={{ fontSize: 11, fontWeight: 600, lineHeight: '17px', px: 0.9, borderRadius: 9, color, bgcolor: alpha(color, 0.14), border: `0.5px solid ${alpha(color, 0.5)}` }}>GPU{g}</Box>)}
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {e.gpus.map((g) => {
+        const h = running ? host?.gpus?.find((x) => x.index === g) : undefined
+        return (
+          <Box key={g} sx={{ display: 'flex', alignItems: 'center', gap: 0.9, whiteSpace: 'nowrap' }}>
+            <Box component="span" sx={{ fontSize: 11, fontWeight: 600, lineHeight: '17px', px: 0.9, borderRadius: 9, color, bgcolor: alpha(color, 0.14), border: `0.5px solid ${alpha(color, 0.5)}` }}>GPU{g}</Box>
+            <Typography component="span" sx={{ fontSize: 11.5, color: 'text.secondary' }}>{model}</Typography>
+            {h && <Typography component="span" sx={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums', ml: 'auto' }}>{h.util}% · {gb(h.mem_used)}/{gb(h.mem_total)}G</Typography>}
+          </Box>
+        )
+      })}
     </Box>
   )
 }
@@ -55,8 +66,8 @@ function Bar({ frac, color, running, dark }: { frac: number | null; color: strin
   )
 }
 
-type RowProps = { e: Exp; now: number; dark: boolean; color: string; history?: boolean; onLog: () => void; onRemove: () => void }
-function Row({ e, now, dark, color, history, onLog, onRemove }: RowProps) {
+type RowProps = { e: Exp; host?: { gpus: HostGpu[] }; now: number; dark: boolean; color: string; history?: boolean; onLog: () => void; onRemove: () => void }
+function Row({ e, host, now, dark, color, history, onLog, onRemove }: RowProps) {
   const theme = useTheme()
   const [open, setOpen] = useState(false)
   const running = e.status === 'running'
@@ -64,13 +75,12 @@ function Row({ e, now, dark, color, history, onLog, onRemove }: RowProps) {
   const pct = e.frac === null ? null : Math.min(100, Math.floor(e.frac * 1000) / 10)
   const sc = e.status === 'done' ? theme.palette.success.main : e.status === 'failed' ? theme.palette.error.main : e.status === 'stopped' ? theme.palette.warning.main : color
   const stageText = running ? e.stage.replace(/（.*）/, '') : e.status === 'done' ? '已完成' : e.status === 'failed' ? '出错退出' : '中途退出'
-  const total = e.eta_ts ? e.eta_ts - e.start : null
   const m = e.metrics || {}
   const mets = [['PSNR', m.psnr], ['SSIM', m.ssim], ['loss', m.loss]].filter((x) => x[1])
   return (
     <>
       <Box onClick={() => setOpen((v) => !v)} sx={{ display: 'grid', gridTemplateColumns: COLS, alignItems: 'center', gap: 2, px: 1.8, py: 1.15, cursor: 'pointer', opacity: stale ? 0.55 : 1, '&:hover': { bgcolor: 'action.hover' } }}>
-        <GpuTags gpus={e.gpus} color={color} />
+        <GpuCol e={e} host={host} color={color} />
         <Box sx={{ minWidth: 0 }}>
           <Typography noWrap title={e.name} sx={{ fontSize: 13.5, fontWeight: 600 }}>{e.name}</Typography>
           <Typography noWrap sx={{ fontSize: 12, color: running ? 'text.secondary' : sc }}>{stageText}</Typography>
@@ -80,17 +90,13 @@ function Row({ e, now, dark, color, history, onLog, onRemove }: RowProps) {
           <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary', mt: 0.4 }}>{e.label || (running ? '没认出进度' : '')}</Typography>
         </Box>
         <Typography sx={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{pct === null ? '—' : `${Math.round(pct)}%`}</Typography>
-        {running ? (
-          <Box sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 0 }}>
-            <Typography noWrap sx={{ fontSize: 13 }}>{fmtDur(now - e.start)} / {total ? fmtDur(total) : '—'}</Typography>
-            <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary' }}>{e.eta_ts ? `${clock(e.eta_ts)} 结束${e.eta_src === 'elapsed' ? '（粗估）' : ''}` : stale ? `停在 ${fmtDur(now - e.updated)} 前` : '—'}</Typography>
-          </Box>
-        ) : (
-          <Box sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 0 }}>
-            <Typography noWrap sx={{ fontSize: 13 }}>用时 {fmtDur((e.end || e.updated) - e.start)}</Typography>
-            <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary' }}>{span(e.start, e.end || e.updated)}</Typography>
-          </Box>
-        )}
+        <Box sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 0 }}>
+          <Typography noWrap sx={{ fontSize: 13 }}><Box component="span" sx={{ color: 'text.disabled', fontSize: 12, mr: 0.8 }}>开始</Box>{clock(e.start)}</Typography>
+          <Typography noWrap sx={{ fontSize: 13 }}>
+            <Box component="span" sx={{ color: 'text.disabled', fontSize: 12, mr: 0.8 }}>{running ? '预计结束' : '结束'}</Box>
+            {running ? (e.eta_ts ? `${clock(e.eta_ts)}${e.eta_src === 'elapsed' ? ' ≈' : ''}` : stale ? `停在 ${fmtDur(now - e.updated)} 前` : '—') : clock(e.end || e.updated)}
+          </Typography>
+        </Box>
       </Box>
       {open && (
         <Box sx={{ px: 1.8, pb: 1.3, pt: 0.2, display: 'flex', flexDirection: 'column', gap: 0.6, fontSize: 12, color: 'text.secondary' }}>
@@ -118,7 +124,7 @@ function ColHead({ last }: { last: string }) {
     <Box sx={{ display: 'flex', fontSize: 12, color: 'text.disabled', borderBottom: 1, borderColor: 'divider', py: 0.9 }}>
       <Box sx={{ boxSizing: 'border-box', flex: '0 0 104px', pl: 1.8 }}>主机</Box>
       <Box sx={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: COLS, gap: 2, px: 1.8 }}>
-        <span>显卡</span><span>实验</span><span>进度</span><span></span><span>{last}</span>
+        <span>显卡 · 利用率 · 显存</span><span>实验</span><span>进度</span><span></span><span>{last}</span>
       </Box>
     </Box>
   )
@@ -200,20 +206,11 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
   const finishedCount = items.length - running.length
   // 没有任务的主机：一行带过（有显卡、连得上、当前没有任务）
   const idle = useMemo(() => Object.keys(hosts).filter((a) => !groups.some(([g]) => g === a)).sort(), [hosts, groups])
-  const hname = (a: string) => { const g = hosts[a]?.gpus; return g?.length ? `${g.length} × ${shortName(g[0].name)}` : '' }
-  const freeText = (alias: string, exps: Exp[]) => {
-    const h = hosts[alias]
-    if (!h || exps.some((x) => !x.gpus.length)) return ''
-    const used = new Set(exps.flatMap((x) => x.gpus))
-    const free = h.gpus.filter((g) => !used.has(g.index)).map((g) => g.index)
-    return free.length ? `空闲 ${free.map((i) => 'GPU' + i).join(' ')}` : ''
-  }
-
   const chip = (k: HFilter, text: string) => (
     <Chip size="small" label={text} onClick={() => setHf(k)} color={hf === k ? 'primary' : 'default'} variant={hf === k ? 'filled' : 'outlined'} />
   )
   const wrap = { bgcolor: dark ? '#282A36' : '#fff', borderRadius: 2, overflow: 'hidden' }
-  const rail = { boxSizing: 'border-box' as const, flex: '0 0 104px', px: 1.8, py: 1.3, bgcolor: dark ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.035)', borderRight: 1, borderColor: 'divider' }
+  const rail = { boxSizing: 'border-box' as const, flex: '0 0 104px', px: 1.2, py: 1.3, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' as const, bgcolor: dark ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.035)', borderRight: 1, borderColor: 'divider' }
   return (
     <BasePage title="实验" info="自动发现各台已连接的 Linux 服务器上正在占用显存的 Python 训练任务，读日志算进度和预计结束时间，跑完自动归档。不调用任何模型。后台每分钟扫一次；只记录深度学习训练，Jupyter 等不算。"
       header={
@@ -230,25 +227,20 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
             </Box>
           ) : (
             <Box sx={wrap}>
-              <ColHead last="已训练 / 预计共" />
+              <ColHead last="开始 / 预计结束" />
               {groups.map(([alias, exps], gi) => {
-                const free = freeText(alias, exps)
                 return (
                   <Box key={alias} sx={{ display: 'flex', borderTop: gi ? 1 : 0, borderColor: 'divider' }}>
-                    <Box sx={rail}>
-                      <Typography sx={{ fontSize: 14, fontWeight: 700 }}>{alias}</Typography>
-                      {hname(alias) && <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>{hname(alias)}</Typography>}
-                      {free && <Typography sx={{ fontSize: 11.5, color: 'success.main', mt: 0.4 }}>{free}</Typography>}
-                    </Box>
+                    <Box sx={rail}><Typography sx={{ fontSize: 14, fontWeight: 700, wordBreak: 'break-all' }}>{alias}</Typography></Box>
                     <Box sx={{ flex: 1, minWidth: 0, '& > :not(:first-of-type)': { borderTop: 1, borderColor: 'divider' } }}>
-                      {exps.map((e, i) => <Box key={e.id}><Row e={e} now={now} dark={dark} color={TASK_COLORS[i % TASK_COLORS.length]} onLog={() => setLogFor(e)} onRemove={() => {}} /></Box>)}
+                      {exps.map((e, i) => <Box key={e.id}><Row e={e} host={hosts[alias]} now={now} dark={dark} color={TASK_COLORS[i % TASK_COLORS.length]} onLog={() => setLogFor(e)} onRemove={() => {}} /></Box>)}
                     </Box>
                   </Box>
                 )
               })}
               {idle.length > 0 && (
                 <Box sx={{ px: 1.8, py: 1, borderTop: 1, borderColor: 'divider', fontSize: 12.5, color: 'text.secondary', display: 'flex', gap: 2.5, flexWrap: 'wrap' }}>
-                  {idle.map((a) => <span key={a}><b style={{ fontWeight: 600 }}>{a}</b> 空闲{hname(a) ? ` · ${hname(a)}` : ''}</span>)}
+                  {idle.map((a) => <span key={a}><b style={{ fontWeight: 600 }}>{a}</b> 空闲</span>)}
                 </Box>
               )}
             </Box>
@@ -264,11 +256,11 @@ export default function ExperimentsPage({ active }: { active?: boolean }) {
             <Box sx={{ ...wrap, py: 4, textAlign: 'center', color: 'text.disabled', fontSize: 13.5 }}>{finishedCount ? '这个分类下没有记录' : '跑完的实验会自动记在这里'}</Box>
           ) : (
             <Box sx={wrap}>
-              <ColHead last="用时 / 起止" />
+              <ColHead last="开始 / 结束" />
               {history.map((e, i) => (
                 <Box key={e.id} sx={{ display: 'flex', borderTop: i ? 1 : 0, borderColor: 'divider' }}>
                   <Box sx={rail}><Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{e.alias}</Typography></Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}><Row e={e} now={now} dark={dark} color={TASK_COLORS[0]} history onLog={() => setLogFor(e)} onRemove={() => api.exp_remove(e.id)} /></Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}><Row e={e} host={hosts[e.alias]} now={now} dark={dark} color={TASK_COLORS[0]} history onLog={() => setLogFor(e)} onRemove={() => api.exp_remove(e.id)} /></Box>
                 </Box>
               ))}
             </Box>

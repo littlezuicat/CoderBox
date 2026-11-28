@@ -14,12 +14,13 @@ import logging
 import os
 import re
 import shlex
+import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from majing.core import logprog, sshhosts
-from majing.settings import _path
+from majing.core import expnote, logprog, sshhosts
+from majing.settings import _path, settings
 
 log = logging.getLogger("majing.exp")
 
@@ -298,6 +299,8 @@ class Monitor:
         self.enabled = True
         self._loaded = False
         self._started = False
+        self._nq = queue.Queue()         # 等着生成一句话说明的实验（一个个来，别同时开好几个 claude）
+        self.ai = {"ok": None, "error": "", "kind": ""}
 
     # ---------------------------------------------------------------- 存取
     def _load(self):
@@ -328,11 +331,13 @@ class Monitor:
                 return
             self._started = True
         threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._note_loop, daemon=True).start()
 
     def state(self):
         with self._lock:
             self._load()
-            return {"items": [self._pub(r) for r in self.items], "hosts": dict(self.hosts), "last_poll": self.last_poll, "busy": self._busy, "enabled": self.enabled}
+            return {"items": [self._pub(r) for r in self.items], "hosts": dict(self.hosts), "last_poll": self.last_poll, "busy": self._busy, "enabled": self.enabled,
+                    "ai": {"mode": self._mode(), **self.ai}}
 
     @staticmethod
     def _pub(r):
@@ -507,6 +512,7 @@ class Monitor:
             if best is None or score > best[0]:
                 best = (score, f, a)
         mem["total"] = True
+        self._want_note(rec, mem)
         if g:
             rec["gpus"], rec["mem"], rec["pid"] = g["gpus"] or rec["gpus"], g["mem"] or rec["mem"], g["pid"]
             if g.get("launcher"):
@@ -555,6 +561,7 @@ class Monitor:
             a = logprog.analyze(head, f["tail"], rec["cmd"], mem.get("cfg", ""), now=now, mtime=f["mtime"] or None, started=rec["start"])
             mtime = f["mtime"]
             break
+        self._want_note(rec, mem)
         rec["status"] = "stopped"
         if a:
             self._apply(rec, a, now)
@@ -576,6 +583,64 @@ class Monitor:
         rec["updated"] = int(now)
         self._mem.pop(rec["id"], None)
         rec.pop("hist", None)
+
+    # ---------------------------------------------------------------- 一句话实验说明（Haiku，提取成功一次就不再提取）
+    def _want_note(self, rec, mem):
+        if rec.get("note") or self._mode() == "off":
+            return
+        now = time.time()
+        if mem.get("note_q") or now < mem.get("note_next", 0) or mem.get("note_tries", 0) >= 8:
+            return
+        heads = mem.get("heads") or {}
+        ctx = {"cmd": rec["cmd"], "launcher": rec.get("launcher", ""), "cwd": rec["cwd"], "cfg": mem.get("cfg", ""),
+               "head": next(iter(heads.values()), ""), "tail": rec.get("last_line", "")}
+        mem["note_q"] = True
+        self._nq.put((rec["id"], ctx))
+
+    def _note_loop(self):
+        while True:
+            rid, ctx = self._nq.get()
+            try:
+                self._note_one(rid, ctx)
+            except Exception as e:      # noqa: BLE001
+                log.warning("生成实验说明出错：%s", e)
+
+    def _note_one(self, rid, ctx):
+        with self._lock:
+            rec = next((r for r in self.items if r["id"] == rid), None)
+        mem = self._mem.setdefault(rid, {})
+        mode = self._mode()
+        if not rec or rec.get("note") or mode == "off":
+            mem["note_q"] = False
+            return
+        ok, text, kind = expnote.ask(ctx, mode)
+        mem["note_q"] = False
+        if ok:
+            with self._lock:
+                rec["note"] = text
+                self.ai = {"ok": True, "error": "", "kind": ""}
+                self._save()
+            log.info("实验说明 %s：%s", rec["name"], text)
+        else:
+            mem["note_tries"] = mem.get("note_tries", 0) + 1
+            mem["note_next"] = time.time() + min(900 * mem["note_tries"], 7200)
+            self.ai = {"ok": False, "error": text, "kind": kind}
+            log.info("实验说明失败（%s）：%s", kind, text)
+        self.emit("exp:update", self.state())
+
+    @staticmethod
+    def _mode():
+        v = settings.get("exp_ai", "haiku")
+        return "haiku" if v is True else "off" if v is False else (v if v in ("off", "haiku", "gpt") else "haiku")
+
+    def set_ai(self, mode):
+        mode = mode if mode in ("off", "haiku", "gpt") else "off"
+        settings.set("exp_ai", mode)
+        if mode != "off":                # 重新打开：之前失败攒下的退避清掉，马上试
+            for m in self._mem.values():
+                m.pop("note_next", None)
+                m["note_tries"] = 0
+        self.emit("exp:update", self.state())
 
     # ---------------------------------------------------------------- 给界面的操作
     def remove(self, rid):

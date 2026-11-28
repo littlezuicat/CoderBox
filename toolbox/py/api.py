@@ -1554,6 +1554,11 @@ class Api:
         self._thread(lambda: expmon.monitor.poll_all(force=True))
         return {"ok": True}
 
+    def exp_ai_set(self, mode):
+        """选一句话实验说明用哪个模型：off / haiku（Claude Haiku，最低档推理）/ gpt（GPT-6-Luna，low）。会把训练命令、配置、日志开头发给模型，已对密钥打码。"""
+        expmon.monitor.set_ai(mode)
+        return {"ok": True}
+
     def exp_remove(self, rid):
         expmon.monitor.remove(rid)
         return {"ok": True}
